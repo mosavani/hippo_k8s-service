@@ -1,0 +1,105 @@
+# argocd/applicationset.yaml
+#
+# Platform-owned ApplicationSet — generates one ArgoCD Application per
+# component per environment by reading each service repo's
+# service-settings/components-manifest.yml.
+#
+# Developer contract: edit components-manifest.yml only.
+# Platform contract:  edit this file only.
+#
+# Prerequisites:
+#   - ArgoCD >= 2.3 (ApplicationSet controller bundled)
+#   - This file applied once per cluster:
+#       kubectl apply -f argocd/applicationset.yaml -n argocd
+#
+# Cluster map (update servers/namespaces to match your fleet):
+#   dev   → https://kubernetes.default.svc  / hippo-{name}-dev
+#   prod  → https://kubernetes.default.svc  / hippo-{name}-prod
+#
+# To onboard a new service: add it to its own components-manifest.yml.
+# No changes needed here.
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hippo-services
+  namespace: argocd
+spec:
+  # ── Generators ────────────────────────────────────────────────────────────
+  # Matrix: cross-product of (service repos × environments)
+  generators:
+    - matrix:
+        generators:
+          # 1. Pull components-manifest.yml from every registered service repo
+          - git:
+              repoURL: https://github.com/mosavani/hippo_hello_world.git
+              revision: HEAD
+              files:
+                - path: service-settings/components-manifest.yml
+          # 2. Enumerate environments
+          - list:
+              elements:
+                - env: dev
+                  server: https://kubernetes.default.svc
+                  syncAutomated: "true"
+                - env: prod
+                  server: https://kubernetes.default.svc
+                  syncAutomated: "false"
+
+  # ── Application template ──────────────────────────────────────────────────
+  template:
+    metadata:
+      # One Application per component per env: e.g. hippo-hello-world-dev
+      name: "{{components.name}}-{{env}}"
+      namespace: argocd
+      labels:
+        app.kubernetes.io/name: "{{components.name}}"
+        hippo/env: "{{env}}"
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+
+    spec:
+      project: default
+
+      source:
+        repoURL: "{{components.repo_url}}"
+        targetRevision: "{{components.target_revision}}"
+        # Chart pulled from OCI registry published by hippo_k8s-service release pipeline
+        chart: hippo-service
+        helm:
+          releaseName: "{{components.name}}"
+          # Layer values files — prod appends the overrides on top of defaults
+          valueFiles:
+            - "{{components.helm_chart_default_values_files[0]}}"
+          # Conditionally append production overrides via Helm parameter
+          # (ApplicationSet does not support conditional valueFiles natively;
+          #  use a separate templatePatch or promote via env label in values)
+          values: |
+            global:
+              env: {{env}}
+              componentName: {{components.name}}
+            image:
+              repository: {{components.image_repository}}
+              tag: {{components.image_tag}}
+
+      destination:
+        server: "{{server}}"
+        namespace: "hippo-{{components.name}}-{{env}}"
+
+      syncPolicy:
+        automated:
+          prune: "{{syncAutomated}}"
+          selfHeal: "{{syncAutomated}}"
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 3
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+
+  # Prevent the ApplicationSet from being deleted accidentally
+  syncPolicy:
+    preserveResourcesOnDeletion: true
