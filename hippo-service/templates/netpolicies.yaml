@@ -1,0 +1,41 @@
+{{/*
+netpolicies.yaml — Kubernetes NetworkPolicy.
+
+Enabled via networkPolicy.enabled: true (default).
+
+Default: allows inbound traffic only from pods in the same namespace.
+Set networkPolicy.ingressNamespace to also allow from another namespace
+(e.g. "ingress-nginx" for an Ingress controller).
+*/}}
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hippo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "hippo.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from pods in the same namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort | default 8080 }}
+    {{- if .Values.networkPolicy.ingressNamespace }}
+    # Allow from the specified namespace (e.g. ingress controller)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort | default 8080 }}
+    {{- end }}
+{{- end }}

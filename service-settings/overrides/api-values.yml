@@ -1,0 +1,30 @@
+# service-settings/overrides/api-values.yml
+# hippo-api — production overrides
+
+service:
+  replicaCount: 4
+
+hpa:
+  minReplicas: 4
+  maxReplicas: 50
+  targetCPUUtilizationPercentage: 60
+
+affinity:
+  podAntiAffinity: hard    # Hard anti-affinity in prod for HA
+
+ingress:
+  host: api.hippo.example.com
+  annotations:
+    kubernetes.io/ingress.allow-http: "false"
+    networking.gke.io/managed-certificates: hippo-api-cert
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+env:
+  - name: APP_ENV
+    value: production

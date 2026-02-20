@@ -1,0 +1,16 @@
+Hippo Service Chart deployed successfully.
+
+Component: {{ .Values.global.componentName | default "unknown" }}
+Environment: {{ .Values.global.env | default "unknown" }}
+Namespace: {{ .Release.Namespace }}
+
+Image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+Replicas: {{ .Values.service.replicaCount }}
+
+{{- if .Values.ingress.enabled }}
+Ingress enabled at: {{ range .Values.ingress.hosts }}{{ .host }}{{ end }}
+{{- end }}
+
+{{- if .Values.hpa.enabled }}
+HPA: min={{ .Values.hpa.minReplicas }} max={{ .Values.hpa.maxReplicas }}
+{{- end }}

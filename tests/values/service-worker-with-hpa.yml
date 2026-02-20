@@ -1,0 +1,46 @@
+# tests/values/service-worker-with-hpa.yml
+# Internal worker with memory HPA and hard anti-affinity
+image:
+  repository: gcr.io/my-project/hippo-worker
+  tag: "1.0.0"
+
+global:
+  env: dev
+  componentName: hippo-worker
+
+service:
+  replicaCount: 1
+  type: ClusterIP
+  port: 9090
+  targetPort: 9090
+  liveness:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 20
+  readiness:
+    enabled: true
+    path: /ready
+    initialDelaySeconds: 15
+
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 8
+  targetMemoryUtilizationPercentage: 75
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity: hard
+
+networkPolicy:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    memory: 1Gi

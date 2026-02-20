@@ -1,0 +1,22 @@
+{{/*
+pdb.yaml — Pod Disruption Budget.
+
+Ensures voluntary disruptions (node upgrades, drains) don't take the
+service below the minimum available threshold.
+
+Enabled by default (pdb.enabled: true).
+*/}}
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "hippo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "hippo.selectorLabels" . | nindent 6 }}
+  minAvailable: {{ .Values.pdb.minAvailable | default 1 }}
+{{- end }}

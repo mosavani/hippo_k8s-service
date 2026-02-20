@@ -1,0 +1,8 @@
+# tests/globals/dev.yaml — Global cluster values for dev environment
+global:
+  env: dev
+  clusterName: hippo-dev-us-central1
+  gcpProject: my-gcp-project-dev
+  region: us-central1
+  deploymentZone: public
+  replicaCountOverride: 0

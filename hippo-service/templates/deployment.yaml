@@ -1,0 +1,85 @@
+{{/*
+deployment.yaml — Kubernetes Deployment for Hippo services.
+Suppressed when rollout.enabled: true — the Rollout object takes its place.
+*/}}
+{{- if not .Values.rollout.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hippo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+spec:
+  {{- if and .Values.global.replicaCountOverride (gt (int .Values.global.replicaCountOverride) 0) }}
+  replicas: {{ .Values.global.replicaCountOverride }}
+  {{- else }}
+  replicas: {{ .Values.service.replicaCount | default 2 }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.service.revisionHistoryLimit | default 3 }}
+  selector:
+    matchLabels:
+      {{- include "hippo.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.service.maxSurge | default 1 }}
+      maxUnavailable: {{ .Values.service.maxUnavailable | default 0 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hippo.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      # Affinity: pod anti-affinity + optional node pool pin
+      {{- include "hippo.affinity" . | nindent 6 }}
+
+      containers:
+        - name: {{ include "hippo.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort | default 8080 }}
+              protocol: TCP
+
+          # Environment variables
+          {{- if .Values.env }}
+          env:
+            {{- toYaml .Values.env | nindent 12 }}
+          {{- end }}
+
+          # Liveness probe
+          {{- if .Values.service.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.service.liveness.path | default "/health" }}
+              port: {{ .Values.service.targetPort | default 8080 }}
+            initialDelaySeconds: {{ .Values.service.liveness.initialDelaySeconds | default 15 }}
+            periodSeconds: {{ .Values.service.liveness.periodSeconds | default 30 }}
+            timeoutSeconds: {{ .Values.service.liveness.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.service.liveness.failureThreshold | default 3 }}
+          {{- end }}
+
+          # Readiness probe
+          {{- if .Values.service.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.service.readiness.path | default "/ready" }}
+              port: {{ .Values.service.targetPort | default 8080 }}
+            initialDelaySeconds: {{ .Values.service.readiness.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.service.readiness.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.service.readiness.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.service.readiness.failureThreshold | default 3 }}
+          {{- end }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+{{- end }}

@@ -1,0 +1,56 @@
+# tests/values/service-prod-ha.yml
+# Production: hard anti-affinity, high replicas, managed cert ingress
+image:
+  repository: gcr.io/my-project/hippo-api
+  tag: "2.0.0"
+
+global:
+  env: prod
+  componentName: hippo-api
+
+service:
+  replicaCount: 4
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  liveness:
+    enabled: true
+    path: /health
+  readiness:
+    enabled: true
+    path: /ready
+
+hpa:
+  enabled: true
+  minReplicas: 4
+  maxReplicas: 50
+  targetCPUUtilizationPercentage: 60
+  scaleDownStabilizationWindowSeconds: 300
+
+pdb:
+  enabled: true
+  minAvailable: 2
+
+affinity:
+  podAntiAffinity: hard
+  nodePool: ""       # No pool pin; let scheduler spread across zones
+
+ingress:
+  enabled: true
+  className: "gce"
+  annotations:
+    kubernetes.io/ingress.allow-http: "false"
+    networking.gke.io/managed-certificates: hippo-api-cert
+  host: api.hippo.example.com
+  path: /
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: kube-system
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    memory: 1Gi

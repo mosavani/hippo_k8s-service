@@ -1,0 +1,48 @@
+# .github/workflows/ci.yml
+# Runs on every pull request.
+# Lints the chart and renders every test scenario to catch template errors early.
+
+name: CI
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-render:
+    name: Lint & Render
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      # Validate values.schema.json is valid JSON
+      - name: Validate schema
+        run: python3 -c "import json; json.load(open('hippo-service/values.schema.json'))"
+
+      # Lint the chart (catches schema violations, YAML errors, missing required fields)
+      - name: Helm lint
+        run: helm lint hippo-service/
+
+      # Render every test scenario — fails if any template expansion errors occur
+      - name: Render all test scenarios
+        run: |
+          set -e
+          for f in tests/values/*.yml; do
+            echo "→ rendering $f"
+            helm template hippo-release hippo-service/ \
+              --values hippo-service/values.yaml \
+              --values "$f" > /dev/null
+          done
+          echo "All renders passed."

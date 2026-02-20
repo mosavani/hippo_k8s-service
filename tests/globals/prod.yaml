@@ -1,0 +1,8 @@
+# tests/globals/prod.yaml — Global cluster values for prod environment
+global:
+  env: prod
+  clusterName: hippo-prod-us-central1
+  gcpProject: my-gcp-project-prod
+  region: us-central1
+  deploymentZone: public
+  replicaCountOverride: 0

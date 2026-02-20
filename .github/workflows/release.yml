@@ -1,0 +1,91 @@
+# .github/workflows/release.yml
+# Triggered by pushing a semver tag (e.g. v1.2.3).
+# Packages the Helm chart and pushes it to Google Artifact Registry as an OCI artifact.
+#
+# Required repository secrets:
+#   GAR_LOCATION      — e.g. us-central1
+#   GAR_PROJECT_ID    — GCP project ID
+#   GAR_REPOSITORY    — AR repository name (e.g. hippo-helm-charts)
+#   GCP_SA_KEY        — base64-encoded GCP service account key JSON
+#                       (needs roles/artifactregistry.writer on the repository)
+#
+# OCI push URL format:
+#   oci://<GAR_LOCATION>-docker.pkg.dev/<GAR_PROJECT_ID>/<GAR_REPOSITORY>
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Package & Publish to GAR
+    runs-on: ubuntu-latest
+
+    env:
+      GAR_LOCATION: ${{ secrets.GAR_LOCATION }}
+      GAR_PROJECT_ID: ${{ secrets.GAR_PROJECT_ID }}
+      GAR_REPOSITORY: ${{ secrets.GAR_REPOSITORY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Strip the leading 'v' from the tag to get the chart version
+      - name: Resolve chart version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      # Authenticate to GCP
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # Configure Docker credential helper for Artifact Registry
+      - name: Configure GAR credentials for Helm
+        run: |
+          gcloud auth configure-docker \
+            "${GAR_LOCATION}-docker.pkg.dev" --quiet
+
+      # Stamp the version into Chart.yaml (chart is versioned 0.0.0 in source)
+      - name: Set chart version
+        run: |
+          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" \
+            hippo-service/Chart.yaml
+
+      # Lint one final time at the release version
+      - name: Helm lint
+        run: helm lint hippo-service/
+
+      # Package the chart into a .tgz
+      - name: Helm package
+        run: |
+          mkdir -p dist
+          helm package hippo-service/ --destination dist/ \
+            --version ${{ steps.version.outputs.version }}
+
+      # Push to GAR OCI repository
+      - name: Helm push to GAR
+        run: |
+          helm push \
+            dist/hippo-service-${{ steps.version.outputs.version }}.tgz \
+            oci://${GAR_LOCATION}-docker.pkg.dev/${GAR_PROJECT_ID}/${GAR_REPOSITORY}
+
+      - name: Summary
+        run: |
+          echo "### Chart published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "oci://${GAR_LOCATION}-docker.pkg.dev/${GAR_PROJECT_ID}/${GAR_REPOSITORY}/hippo-service:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"

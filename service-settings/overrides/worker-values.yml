@@ -1,0 +1,25 @@
+# service-settings/overrides/worker-values.yml
+# hippo-worker — production overrides
+
+service:
+  replicaCount: 2
+
+hpa:
+  minReplicas: 2
+  maxReplicas: 20
+
+affinity:
+  podAntiAffinity: hard
+
+resources:
+  requests:
+    cpu: 1000m
+    memory: 1Gi
+  limits:
+    memory: 2Gi
+
+env:
+  - name: APP_ENV
+    value: production
+  - name: WORKER_CONCURRENCY
+    value: "8"

@@ -1,0 +1,31 @@
+# ============================================================
+# service-settings/components-manifest.yml
+# ============================================================
+# Each component maps to an independent Helm release.
+#
+# Fields:
+#   name          — component identifier (Helm release name)
+#   type          — always "service" for this chart
+#   deployment_zones — GKE cluster zones to deploy to
+#   helm_chart_default_values_files    — base values (dev/staging)
+#   helm_chart_production_overrides_values_files — prod overrides
+# ============================================================
+
+components:
+  - name: hippo-api
+    type: service
+    deployment_zones:
+      - public
+    helm_chart_default_values_files:
+      - default/api-values.yml
+    helm_chart_production_overrides_values_files:
+      - overrides/api-values.yml
+
+  - name: hippo-worker
+    type: service
+    deployment_zones:
+      - internal
+    helm_chart_default_values_files:
+      - default/worker-values.yml
+    helm_chart_production_overrides_values_files:
+      - overrides/worker-values.yml

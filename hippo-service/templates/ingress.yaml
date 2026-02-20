@@ -1,0 +1,43 @@
+{{/*
+ingress.yaml — GKE Ingress (HTTP(S) LoadBalancer).
+
+Enabled via ingress.enabled: true.
+Use ingress.className: "gce" for external, "gce-internal" for internal.
+
+Common GKE annotations:
+  kubernetes.io/ingress.allow-http: "false"
+  networking.gke.io/managed-certificates: <cert-name>
+  kubernetes.io/ingress.global-static-ip-name: <ip-name>
+*/}}
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hippo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path | default "/" }}
+            pathType: {{ .Values.ingress.pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ include "hippo.fullname" . }}
+                port:
+                  number: {{ .Values.service.port | default 80 }}
+{{- end }}

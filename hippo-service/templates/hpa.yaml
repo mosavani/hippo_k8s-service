@@ -1,0 +1,57 @@
+{{/*
+hpa.yaml — Horizontal Pod Autoscaler.
+
+Enabled via hpa.enabled: true.
+Supports CPU and/or memory targets.
+Scale-down stabilisation window prevents rapid oscillation.
+*/}}
+{{- if .Values.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "hippo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    {{- if .Values.rollout.enabled }}
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    {{- else }}
+    apiVersion: apps/v1
+    kind: Deployment
+    {{- end }}
+    name: {{ include "hippo.fullname" . }}
+  minReplicas: {{ .Values.hpa.minReplicas | default 2 }}
+  maxReplicas: {{ .Values.hpa.maxReplicas | default 10 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage | default 70 }}
+    {{- if .Values.hpa.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.targetMemoryUtilizationPercentage }}
+    {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.hpa.scaleDownStabilizationWindowSeconds | default 300 }}
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+      selectPolicy: Max
+{{- end }}

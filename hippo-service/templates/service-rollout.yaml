@@ -1,0 +1,33 @@
+{{/*
+service-rollout.yaml — Stable and canary Services for Argo Rollouts traffic splitting.
+
+Only rendered when rollout.enabled: true.
+Argo Rollouts requires two separate Services to do weighted traffic shifting:
+  - <name>-stable  → receives traffic matching the stable (old) ReplicaSet
+  - <name>-canary  → receives traffic matching the canary (new) ReplicaSet
+
+The Rollout controller manages the pod selectors on these Services automatically.
+Your Ingress (or service.yaml) should point at <name>-stable for normal traffic.
+*/}}
+{{- if .Values.rollout.enabled }}
+{{- range $type := list "stable" "canary" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hippo.fullname" $ }}-{{ $type }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" $ | nindent 4 }}
+    rollout-service-type: {{ $type }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hippo.selectorLabels" $ | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $.Values.service.port | default 80 }}
+      targetPort: {{ $.Values.service.targetPort | default 8080 }}
+      protocol: TCP
+{{- end }}
+{{- end }}

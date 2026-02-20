@@ -1,0 +1,22 @@
+{{/*
+service.yaml — Kubernetes Service.
+
+type: ClusterIP  — internal only; use with Ingress for external HTTP(S).
+type: LoadBalancer — GKE L4 external LoadBalancer (direct TCP/UDP).
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hippo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type | default "ClusterIP" }}
+  selector:
+    {{- include "hippo.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port | default 80 }}
+      targetPort: {{ .Values.service.targetPort | default 8080 }}
+      protocol: TCP

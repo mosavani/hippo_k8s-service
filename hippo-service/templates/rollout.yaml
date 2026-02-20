@@ -1,0 +1,112 @@
+{{/*
+rollout.yaml — Argo Rollout (canary strategy) for Hippo services.
+
+Only rendered when rollout.enabled: true.
+Replaces the standard Deployment — deployment.yaml is suppressed when this is active.
+
+Prerequisites:
+  - Argo Rollouts controller installed in the cluster
+      kubectl create namespace argo-rollouts
+      kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+
+Enable in your component values:
+  rollout:
+    enabled: true
+    steps:
+      - setWeight: 20
+      - pause: { duration: 60s }
+      - setWeight: 50
+      - pause: { duration: 120s }
+      - setWeight: 100
+*/}}
+{{- if .Values.rollout.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "hippo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+  {{- with .Values.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if and .Values.global.replicaCountOverride (gt (int .Values.global.replicaCountOverride) 0) }}
+  replicas: {{ .Values.global.replicaCountOverride }}
+  {{- else if not .Values.hpa.enabled }}
+  # Omit replicas when HPA is enabled — HPA manages the count directly.
+  replicas: {{ .Values.service.replicaCount | default 2 }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.service.revisionHistoryLimit | default 3 }}
+  selector:
+    matchLabels:
+      {{- include "hippo.selectorLabels" . | nindent 6 }}
+  progressDeadlineSeconds: {{ .Values.rollout.progressDeadlineSeconds | default 600 }}
+  progressDeadlineAbort: {{ .Values.rollout.progressDeadlineAbort | default true }}
+  template:
+    metadata:
+      labels:
+        {{- include "hippo.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "hippo.affinity" . | nindent 6 }}
+      containers:
+        - name: {{ include "hippo.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort | default 8080 }}
+              protocol: TCP
+          {{- if .Values.env }}
+          env:
+            {{- toYaml .Values.env | nindent 12 }}
+          {{- end }}
+          {{- if .Values.service.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.service.liveness.path | default "/health" }}
+              port: {{ .Values.service.targetPort | default 8080 }}
+            initialDelaySeconds: {{ .Values.service.liveness.initialDelaySeconds | default 15 }}
+            periodSeconds: {{ .Values.service.liveness.periodSeconds | default 30 }}
+            timeoutSeconds: {{ .Values.service.liveness.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.service.liveness.failureThreshold | default 3 }}
+          {{- end }}
+          {{- if .Values.service.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.service.readiness.path | default "/ready" }}
+              port: {{ .Values.service.targetPort | default 8080 }}
+            initialDelaySeconds: {{ .Values.service.readiness.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.service.readiness.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.service.readiness.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.service.readiness.failureThreshold | default 3 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+  strategy:
+    canary:
+      # stable receives all traffic until promotion; canary gets canaryWeight %.
+      stableService: {{ include "hippo.fullname" . }}-stable
+      canaryService: {{ include "hippo.fullname" . }}-canary
+      maxSurge: "{{ .Values.rollout.maxSurge | default 25 }}%"
+      maxUnavailable: "{{ .Values.rollout.maxUnavailable | default 0 }}%"
+      # Label canary pods so you can tell them apart in dashboards / log queries.
+      canaryMetadata:
+        labels:
+          rollout-role: canary
+      stableMetadata:
+        labels:
+          rollout-role: stable
+      {{- if not .Values.rollout.autoPromote }}
+      steps:
+        {{- include "hippo.rollout.steps" . | nindent 8 }}
+      {{- end }}
+{{- end }}

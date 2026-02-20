@@ -1,0 +1,51 @@
+# tests/values/service-api-with-ingress.yml
+# API with GKE Ingress + HPA
+image:
+  repository: gcr.io/my-project/hippo-api
+  tag: "1.0.0"
+
+global:
+  env: dev
+  componentName: hippo-api
+
+service:
+  replicaCount: 2
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  liveness:
+    enabled: true
+    path: /health
+  readiness:
+    enabled: true
+    path: /ready
+
+ingress:
+  enabled: true
+  className: "gce"
+  host: api-dev.hippo.example.com
+  path: /
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity: soft
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: kube-system
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    memory: 512Mi

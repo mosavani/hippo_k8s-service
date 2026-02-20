@@ -1,0 +1,13 @@
+apiVersion: v2
+description: A Helm chart for Hippo Kubernetes service deployments
+name: hippo-service
+version: 0.0.0
+appVersion: "1.0.0"
+keywords:
+  - hippo
+  - kubernetes
+  - gke
+home: https://github.com/your-org/hippo_k8s-service
+maintainers:
+  - name: Platform Engineering
+    email: platform-eng@your-org.com

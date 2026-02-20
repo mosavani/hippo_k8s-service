@@ -1,0 +1,59 @@
+# service-settings/default/api-values.yml
+# hippo-api — HTTP API service (dev/staging)
+
+service:
+  replicaCount: 2
+  type: ClusterIP          # Traffic arrives via Ingress
+  port: 80
+  targetPort: 8080
+  liveness:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    path: /ready
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+
+ingress:
+  enabled: true
+  className: "gce"
+  annotations:
+    kubernetes.io/ingress.allow-http: "false"
+  host: api-dev.hippo.example.com
+  path: /
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  scaleDownStabilizationWindowSeconds: 300
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity: soft
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: kube-system   # GKE Ingress controller lives here
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+env:
+  - name: APP_ENV
+    value: development
+  - name: PORT
+    value: "8080"
