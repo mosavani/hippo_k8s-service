@@ -1,0 +1,44 @@
+# argocd/argocd-repo-server-wi.yaml
+#
+# Configures argocd-repo-server to pull OCI Helm charts from GAR using
+# Workload Identity — no static credentials or expiring tokens.
+#
+# How it works:
+#   1. The argocd-repo-server Kubernetes SA is annotated with the GCP SA email.
+#   2. GKE's Workload Identity binds the K8s SA to the GCP SA at the metadata server.
+#   3. argocd-repo-server gets an ambient GCP access token from the metadata server.
+#   4. The repo-creds Secret below tells ArgoCD to use that token for GAR OCI pulls.
+#
+# The GCP SA (hippo-dev-cluster-argocd-repo) and its K8s SA binding are
+# declared in hippo_cloud/environments/dev/wif.yml and managed by Terraform.
+# Run `make apply-dev` in hippo_cloud after merging the wif.yml change.
+#
+# Applied by: scripts/setup-argocd.sh (step 5a, before ApplicationSet)
+
+---
+# Annotate the argocd-repo-server K8s SA so GKE binds it to the GCP SA.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-repo-server
+  namespace: argocd
+  annotations:
+    iam.gke.io/gcp-service-account: hippo-dev-cluster-argocd-repo@project-ec2467ed-84cd-4898-b5b.iam.gserviceaccount.com
+
+---
+# Repository credential template for GAR OCI.
+# ArgoCD matches any repoURL starting with the url prefix below.
+# enableOCI: "true" is required for OCI registries.
+# No username/password — ArgoCD uses the ambient Workload Identity token
+# obtained via the annotated K8s SA above.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-gar-repo-creds
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repo-creds
+stringData:
+  type: helm
+  url: us-central1-docker.pkg.dev
+  enableOCI: "true"

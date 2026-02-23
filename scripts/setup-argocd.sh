@@ -13,6 +13,7 @@ set -euo pipefail
 
 ARGOCD_NAMESPACE="argocd"
 ARGOCD_INSTALL_URL="https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+ARGOCD_WI_FILE="argocd/argocd-repo-server-wi.yaml"
 APPLICATIONSET_FILE="argocd/applicationset.yaml"
 
 # ── Colours ────────────────────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ kubectl cluster-info >/dev/null 2>&1 \
   || die "Cannot reach the cluster API server. Check your kubeconfig and network."
 
 # ── Step 1: Create namespace ────────────────────────────────────────────────────
-info "Step 1/5 — Ensuring namespace '${ARGOCD_NAMESPACE}' exists..."
+info "Step 1/6 — Ensuring namespace '${ARGOCD_NAMESPACE}' exists..."
 if kubectl get namespace "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
   info "Namespace '${ARGOCD_NAMESPACE}' already exists."
 else
@@ -53,7 +54,7 @@ else
 fi
 
 # ── Step 2: Install ArgoCD (server-side apply avoids annotation size limit) ────
-info "Step 2/5 — Installing ArgoCD (server-side apply)..."
+info "Step 2/6 — Installing ArgoCD (server-side apply)..."
 kubectl apply \
   --server-side \
   --force-conflicts \
@@ -62,7 +63,7 @@ kubectl apply \
 info "ArgoCD manifests applied."
 
 # ── Step 3: Wait for CRDs to be established ─────────────────────────────────────
-info "Step 3/5 — Waiting for ArgoCD CRDs to be established..."
+info "Step 3/6 — Waiting for ArgoCD CRDs to be established..."
 
 for crd in \
   applications.argoproj.io \
@@ -79,7 +80,7 @@ done
 info "All ArgoCD CRDs established."
 
 # ── Step 4: Wait for all ArgoCD pods to be ready ────────────────────────────────
-info "Step 4/5 — Waiting for ArgoCD pods to be ready (timeout: 3m)..."
+info "Step 4/6 — Waiting for ArgoCD pods to be ready (timeout: 3m)..."
 kubectl wait \
   --for=condition=Ready \
   pods --all \
@@ -90,8 +91,27 @@ kubectl wait \
 info "All ArgoCD pods are ready."
 kubectl get pods -n "${ARGOCD_NAMESPACE}"
 
-# ── Step 5: Apply the ApplicationSet ────────────────────────────────────────────
-info "Step 5/5 — Applying ApplicationSet..."
+# ── Step 5: Configure Workload Identity for argocd-repo-server ──────────────────
+info "Step 5/6 — Configuring Workload Identity for argocd-repo-server..."
+
+[[ -f "${ARGOCD_WI_FILE}" ]] \
+  || die "${ARGOCD_WI_FILE} not found. Run this script from the repo root."
+
+kubectl apply \
+  --server-side \
+  --force-conflicts \
+  -n "${ARGOCD_NAMESPACE}" \
+  -f "${ARGOCD_WI_FILE}"
+
+# Restart repo-server so it picks up the new SA annotation and WI token.
+kubectl rollout restart deployment/argocd-repo-server -n "${ARGOCD_NAMESPACE}"
+kubectl rollout status deployment/argocd-repo-server -n "${ARGOCD_NAMESPACE}" --timeout=120s \
+  || die "argocd-repo-server did not restart cleanly. Check: kubectl get pods -n ${ARGOCD_NAMESPACE}"
+
+info "Workload Identity configured for argocd-repo-server."
+
+# ── Step 6: Apply the ApplicationSet ────────────────────────────────────────────
+info "Step 6/6 — Applying ApplicationSet..."
 kubectl apply \
   --server-side \
   --force-conflicts \
