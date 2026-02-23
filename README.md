@@ -90,10 +90,14 @@ hippo_k8s-service/
 │       ├── service-prod-ha.yml
 │       └── rollout-canary.yml
 ├── docs/
+│   ├── first_time_setup.md             # Setup guide: ArgoCD install + CI secrets
+│   ├── argocd.md                       # ArgoCD ApplicationSet and GitOps workflow
 │   └── template_readme.md              # Helm template helpers reference
+├── scripts/
+│   └── setup-argocd.sh                 # One-shot ArgoCD install + ApplicationSet apply
 ├── .github/workflows/
 │   ├── ci.yml                          # Lint + render on every PR
-│   └── release.yml                     # Package + push to GAR on tag
+│   └── release.yml                     # Package + push to GAR on tag (via WIF)
 └── Makefile
 ```
 
@@ -141,10 +145,13 @@ The workflow:
 
 | Secret | Value |
 |---|---|
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | WIF provider resource name (from `hippo_cloud`) |
+| `GCP_SERVICE_ACCOUNT` | SA email from `hippo_cloud` output `github_ci_service_accounts["hippo-helm-publisher"]` |
 | `GAR_LOCATION` | e.g. `us-central1` |
 | `GAR_PROJECT_ID` | GCP project ID |
 | `GAR_REPOSITORY` | AR repository name |
-| `GCP_SA_KEY` | Base64 GCP SA key (`roles/artifactregistry.writer`) |
+
+Authentication uses Workload Identity Federation — no long-lived keys. The GCP SA and WIF binding are declared in `hippo_cloud/environments/dev/wif.yml` under `github_ci` and managed by Terraform. See [docs/first_time_setup.md](docs/first_time_setup.md) for setup steps.
 
 ---
 
@@ -406,4 +413,6 @@ kubectl argo rollouts abort   <release-name> -n <namespace>   # roll back
 
 ## Further Reading
 
+- [First-time setup guide](docs/first_time_setup.md) — ArgoCD install, CI secrets, setup script
+- [ArgoCD ApplicationSet and GitOps workflow](docs/argocd.md) — how services are deployed
 - [Helm template helpers reference](docs/template_readme.md) — what each `*.tpl` file does

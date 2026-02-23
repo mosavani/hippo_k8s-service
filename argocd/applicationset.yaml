@@ -41,10 +41,10 @@ spec:
               elements:
                 - env: dev
                   server: https://kubernetes.default.svc
-                  syncAutomated: "true"
+                  syncAutomated: "true"   # informational only — used in templatePatch below
                 - env: prod
                   server: https://kubernetes.default.svc
-                  syncAutomated: "false"
+                  syncAutomated: "false"  # informational only — used in templatePatch below
 
   # ── Application template ──────────────────────────────────────────────────
   template:
@@ -87,9 +87,8 @@ spec:
         namespace: "hippo-{{components.name}}-{{env}}"
 
       syncPolicy:
-        automated:
-          prune: "{{syncAutomated}}"
-          selfHeal: "{{syncAutomated}}"
+        # Base: manual sync (safe default for all envs, including prod).
+        # Dev gets automated sync via templatePatch below.
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
@@ -99,6 +98,18 @@ spec:
             duration: 5s
             factor: 2
             maxDuration: 3m
+
+  # templatePatch overlays env-specific sync behaviour on top of the base template.
+  # prune/selfHeal are booleans — they cannot be interpolated via {{}} in the base
+  # template because the ApplicationSet webhook validates the type at apply time.
+  templatePatch: |
+    {{- if eq syncAutomated "true" }}
+    spec:
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+    {{- end }}
 
   # Prevent the ApplicationSet from being deleted accidentally
   syncPolicy:
