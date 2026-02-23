@@ -79,7 +79,7 @@ spec:
               env: {{env}}
               componentName: {{components.name}}
             image:
-              repository: {{components.image_repository}}
+              repository: us-central1-docker.pkg.dev/project-ec2467ed-84cd-4898-b5b/hippo-images/{{components.name}}
               tag: {{components.image_tag}}
 
       destination:

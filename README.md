@@ -145,7 +145,7 @@ The workflow:
 
 | Secret | Value |
 |---|---|
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | WIF provider resource name (from `hippo_cloud`) |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/68730226170/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
 | `GCP_SERVICE_ACCOUNT` | SA email from `hippo_cloud` output `github_ci_service_accounts["hippo-helm-publisher"]` |
 | `GAR_LOCATION` | e.g. `us-central1` |
 | `GAR_PROJECT_ID` | GCP project ID |
@@ -164,14 +164,20 @@ You do **not** work in this repo. In your own service repo:
 ```yaml
 components:
   - name: frontend-web-app
-    type: service
+    repo_url: https://github.com/mosavani/hippo_frontend_web_app.git
+    target_revision: HEAD
+    image_tag: latest
     deployment_zones:
       - public
     helm_chart_default_values_files:
-      - default/web-values.yml
+      - service-settings/default/web-values.yml
     helm_chart_production_overrides_values_files:
-      - overrides/web-values.yml
+      - service-settings/overrides/web-values.yml
 ```
+
+> **Image path:** The platform constructs the container image path automatically from the component `name`:
+> `<GAR_LOCATION>-docker.pkg.dev/<GAR_PROJECT_ID>/<GAR_REPOSITORY>/frontend-web-app`
+> Push your image to GAR under that path. No `image_repository` field is needed.
 
 ### 2. Create `service-settings/default/web-values.yml`
 
