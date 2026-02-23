@@ -1,0 +1,39 @@
+# argocd/platform-app.yaml
+#
+# App of Apps — ArgoCD manages its own ApplicationSet.
+#
+# Apply this ONCE manually (or via setup-argocd.sh) and never touch it again.
+# After that, any change to argocd/applicationset.yaml or argocd/chart-config.yaml
+# pushed to main is automatically picked up and applied by ArgoCD itself.
+#
+# Apply:
+#   kubectl apply --server-side -f argocd/platform-app.yaml -n argocd
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hippo-platform
+  namespace: argocd
+  # Prevent accidental deletion of the bootstrap Application
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/mosavani/hippo_k8s-service.git
+    targetRevision: main
+    # Only watch the argocd/ directory — changes elsewhere don't trigger a sync
+    path: argocd
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true    # re-applies if someone manually edits the ApplicationSet in-cluster
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

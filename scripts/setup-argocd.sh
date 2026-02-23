@@ -14,7 +14,7 @@ set -euo pipefail
 ARGOCD_NAMESPACE="argocd"
 ARGOCD_INSTALL_URL="https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
 ARGOCD_WI_FILE="argocd/argocd-repo-server-wi.yaml"
-APPLICATIONSET_FILE="argocd/applicationset.yaml"
+PLATFORM_APP_FILE="argocd/platform-app.yaml"
 
 # ── Colours ────────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -37,8 +37,8 @@ CONTEXT=$(kubectl config current-context 2>/dev/null) \
   || die "No kubectl context set. Run: gcloud container clusters get-credentials <cluster> --zone <zone> --project <project>"
 info "Using kubectl context: ${CONTEXT}"
 
-[[ -f "${APPLICATIONSET_FILE}" ]] \
-  || die "${APPLICATIONSET_FILE} not found. Run this script from the repo root."
+[[ -f "${PLATFORM_APP_FILE}" ]] \
+  || die "${PLATFORM_APP_FILE} not found. Run this script from the repo root."
 
 # Verify cluster is reachable
 kubectl cluster-info >/dev/null 2>&1 \
@@ -110,15 +110,18 @@ kubectl rollout status deployment/argocd-repo-server -n "${ARGOCD_NAMESPACE}" --
 
 info "Workload Identity configured for argocd-repo-server."
 
-# ── Step 6: Apply the ApplicationSet ────────────────────────────────────────────
-info "Step 6/6 — Applying ApplicationSet..."
+# ── Step 6: Apply the platform App of Apps ──────────────────────────────────────
+# This is the only manual apply ever needed. After this, ArgoCD watches
+# argocd/ in this repo and self-updates: any push to main (applicationset.yaml,
+# chart-config.yaml, platform-app.yaml) is automatically synced to the cluster.
+info "Step 6/6 — Applying platform App of Apps (hippo-platform)..."
 kubectl apply \
   --server-side \
   --force-conflicts \
   -n "${ARGOCD_NAMESPACE}" \
-  -f "${APPLICATIONSET_FILE}"
+  -f "${PLATFORM_APP_FILE}"
 
-info "ApplicationSet applied successfully."
+info "hippo-platform Application applied. ArgoCD will now self-manage the argocd/ directory."
 
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ""
@@ -127,6 +130,7 @@ echo -e "${GREEN} ArgoCD setup complete${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo "Verify:"
+echo "  kubectl get application hippo-platform -n ${ARGOCD_NAMESPACE}"
 echo "  kubectl get applicationset hippo-services -n ${ARGOCD_NAMESPACE}"
 echo "  kubectl get applications -n ${ARGOCD_NAMESPACE}"
 echo ""
