@@ -1,22 +1,22 @@
 # argocd/applicationset.yaml
 #
 # Platform-owned ApplicationSet — generates one ArgoCD Application per
-# component per environment by reading each service repo's
-# service-settings/components-manifest.yml.
+# component per environment.
 #
-# Developer contract: edit components-manifest.yml in your service repo only.
-# Platform contract:  edit this file and argocd/chart-config.yaml only.
+# Design: matrix of exactly two generators (ArgoCD limit):
+#   1. git: reads components-manifest.yml from each service repo
+#   2. list: environments + chart config (version, GAR coords)
 #
-# Chart version and GAR coordinates live centrally in argocd/chart-config.yaml
-# in this repo. The release workflow updates chart_version automatically on
-# every semver tag push — service repos never need to reference chart versions.
+# Chart version and GAR coordinates are embedded in the list elements.
+# The release workflow in hippo_k8s-service updates chart_version here
+# on every semver tag push.
+#
+# To onboard a new service: add a git generator entry pointing to the
+# new repo's components-manifest.yml. No other changes needed.
 #
 # Prerequisites:
-#   - ArgoCD >= 2.6 (multi-source Applications + ApplicationSet support)
+#   - ArgoCD >= 2.6
 #   - Run once per cluster: ./scripts/setup-argocd.sh
-#
-# To onboard a new service: add it to the git generator list below and
-# add components-manifest.yml to the service repo. No other changes needed.
 
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -24,87 +24,78 @@ metadata:
   name: hippo-services
   namespace: argocd
 spec:
-  # ── Generators ──────────────────────────────────────────────────────────────
-  # Matrix: cross-product of (service repos × environments).
-  # chart-config.yaml is read via a separate git generator and merged in
-  # through a wrapping matrix so chart_version is available in the template.
   generators:
     - matrix:
         generators:
-          # 1. Read chart version + GAR config centrally from this repo
+          # Generator 1: per-service manifest.
+          # Each registered service repo contributes one file.
+          # Keys available in template: app_name, repo_url, target_revision,
+          #                             image_tag, default_values, prod_values
           - git:
-              repoURL: https://github.com/mosavani/hippo_k8s-service.git
+              repoURL: https://github.com/mosavani/hippo_hello_world.git
               revision: HEAD
               files:
-                - path: argocd/chart-config.yaml
+                - path: service-settings/components-manifest.yml
 
-          # 2. Inner matrix: service repos × environments
-          - matrix:
-              generators:
-                # 2a. Pull components-manifest.yml from every registered service repo
-                - git:
-                    repoURL: https://github.com/mosavani/hippo_hello_world.git
-                    revision: HEAD
-                    files:
-                      - path: service-settings/components-manifest.yml
+          # Generator 2: environments with chart config embedded.
+          # chart_version is updated automatically by the hippo_k8s-service
+          # release workflow on every semver tag push.
+          # prod is intentionally omitted — it runs on a separate prod cluster
+          # with its own ApplicationSet applied there.
+          - list:
+              elements:
+                - env: dev
+                  server: https://kubernetes.default.svc
+                  chart_version: "0.0.3"
+                  gar_location: "us-central1"
+                  gar_project_id: "project-ec2467ed-84cd-4898-b5b"
+                  gar_repository: "hippo-helm-charts"
+                  gar_image_repository: "hippo-images"
+                  autoSync: |
+                    automated:
+                      prune: true
+                      selfHeal: true
 
-                # 2b. Enumerate environments
-                - list:
-                    elements:
-                      - env: dev
-                        server: https://kubernetes.default.svc
-                        syncAutomated: "true"
-                      - env: prod
-                        server: https://kubernetes.default.svc
-                        syncAutomated: "false"
-
-  # ── Application template ───────────────────────────────────────────────────
   template:
     metadata:
-      # One Application per component per env: e.g. hippo-hello-world-dev
-      name: "{{components.name}}-{{env}}"
+      name: "{{app_name}}-{{env}}"
       namespace: argocd
       labels:
-        app.kubernetes.io/name: "{{components.name}}"
+        app.kubernetes.io/name: "{{app_name}}"
         hippo/env: "{{env}}"
-        hippo/chart-version: "{{chart_version}}"
       finalizers:
         - resources-finalizer.argocd.argoproj.io
 
     spec:
       project: default
 
-      # Multi-source: chart comes from GAR OCI, values come from the service git repo.
-      # $values ref makes the service repo available to valueFiles in source 1.
       sources:
-        # Source 1 — Helm chart from GAR OCI registry (version from chart-config.yaml)
+        # Chart from GAR OCI — version and registry from list elements above
         - repoURL: "oci://{{gar_location}}-docker.pkg.dev/{{gar_project_id}}/{{gar_repository}}"
           chart: hippo-service
           targetRevision: "{{chart_version}}"
           helm:
-            releaseName: "{{components.name}}"
+            releaseName: "{{app_name}}"
             valueFiles:
-              - $values/{{components.helm_chart_default_values_files[0]}}
+              - $values/{{default_values}}
             values: |
               global:
                 env: {{env}}
-                componentName: {{components.name}}
+                componentName: {{app_name}}
               image:
-                repository: {{gar_location}}-docker.pkg.dev/{{gar_project_id}}/hippo-images/{{components.name}}
-                tag: {{components.image_tag}}
+                repository: {{gar_location}}-docker.pkg.dev/{{gar_project_id}}/{{gar_image_repository}}/{{app_name}}
+                tag: {{image_tag}}
 
-        # Source 2 — Service git repo, used only to supply values files ($values ref)
-        - repoURL: "{{components.repo_url}}"
-          targetRevision: "{{components.target_revision}}"
+        # Service git repo — supplies values files via $values ref
+        - repoURL: "{{repo_url}}"
+          targetRevision: "{{target_revision}}"
           ref: values
 
       destination:
         server: "{{server}}"
-        namespace: "hippo-{{components.name}}-{{env}}"
+        namespace: "hippo-{{app_name}}-{{env}}"
 
       syncPolicy:
-        # Base: manual sync (safe default, including prod).
-        # Dev gets automated sync via templatePatch below.
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
@@ -115,18 +106,11 @@ spec:
             factor: 2
             maxDuration: 3m
 
-  # templatePatch: overlay automated sync for dev only.
-  # prune/selfHeal are booleans — cannot be interpolated via {{}} in the base
-  # template because the ApplicationSet webhook validates types at apply time.
+  # Splice per-environment automated sync block into syncPolicy.
   templatePatch: |
-    {{- if eq syncAutomated "true" }}
     spec:
       syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-    {{- end }}
+        {{autoSync}}
 
-  # Prevent accidental deletion of the ApplicationSet
   syncPolicy:
     preserveResourcesOnDeletion: true
