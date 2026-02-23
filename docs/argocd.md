@@ -90,7 +90,6 @@ components:
   - name: hippo-my-service
     repo_url: https://github.com/mosavani/hippo_my_service.git
     target_revision: HEAD
-    image_repository: ghcr.io/mosavani/hippo-my-service
     image_tag: latest
     deployment_zones:
       - public
@@ -99,6 +98,10 @@ components:
     helm_chart_production_overrides_values_files:
       - service-settings/overrides/values.yml
 ```
+
+> **Image path:** No `image_repository` field is required. The platform constructs the GAR image path from the component `name`:
+> `<GAR_LOCATION>-docker.pkg.dev/<GAR_PROJECT_ID>/<GAR_REPOSITORY>/<name>`
+> Service images must be pushed to GAR under a path matching the component name.
 
 Then add the service repo to the `git` generator list in `applicationset.yaml`:
 
@@ -118,14 +121,15 @@ Then add the service repo to the `git` generator list in `applicationset.yaml`:
 
 | Field | Required | Description |
 |---|---|---|
-| `name` | yes | Helm release name. Also used as the ArgoCD Application prefix and namespace suffix. |
+| `name` | yes | Helm release name. Also used as the ArgoCD Application prefix, namespace suffix, and the final segment of the GAR image path. |
 | `repo_url` | yes | HTTPS URL of the service Git repository. |
 | `target_revision` | yes | Git ref to deploy (`HEAD`, branch name, or semver tag). Pin to a tag for prod stability. |
-| `image_repository` | yes | Container image path, e.g. `ghcr.io/mosavani/hippo-hello-world`. |
 | `image_tag` | yes | Image tag to deploy. Updated automatically by the CI release workflow. |
 | `deployment_zones` | yes | Informational. `public` = internet-facing via Ingress. `internal` = VPC-only. |
 | `helm_chart_default_values_files` | yes | List of values files for dev/staging. Paths are relative to the repo root. |
 | `helm_chart_production_overrides_values_files` | yes | List of values files layered on top for production. |
+
+> **Image path convention:** `image_repository` is no longer a manifest field. The platform constructs it as `<GAR_LOCATION>-docker.pkg.dev/<GAR_PROJECT_ID>/<GAR_REPOSITORY>/<name>`. The component `name` must match the image name in GAR.
 
 ---
 
