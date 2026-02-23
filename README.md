@@ -71,14 +71,6 @@ hippo_k8s-service/
 │           ├── _hippo.labels.tpl       # Name, fullname, selector labels
 │           ├── _hippo.affinity.tpl     # Pod anti-affinity + node pool pin
 │           └── _hippo.rollout.tpl      # Canary step rendering
-├── service-settings/                   # Example values — for reference and local testing only
-│   ├── components-manifest.yml         # Example component registry
-│   ├── default/
-│   │   ├── api-values.yml
-│   │   └── worker-values.yml
-│   └── overrides/
-│       ├── api-values.yml
-│       └── worker-values.yml
 ├── tests/
 │   ├── globals/                        # Cluster-level globals used during test renders
 │   │   ├── dev.yaml
