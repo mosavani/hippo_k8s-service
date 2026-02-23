@@ -1,0 +1,13 @@
+# argocd/chart-config.yaml
+#
+# Central chart version and registry config — platform-owned.
+# Updated automatically by the release workflow on every semver tag push.
+#
+# Service repos do NOT reference this file directly.
+# The ApplicationSet reads it as a generator and injects chart_version
+# and gar_* into every generated Application.
+
+chart_version: "0.0.1"
+gar_location: "us-central1"
+gar_project_id: "project-ec2467ed-84cd-4898-b5b"
+gar_repository: "hippo-helm-charts"
