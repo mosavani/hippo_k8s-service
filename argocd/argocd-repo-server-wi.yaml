@@ -1,11 +1,13 @@
 # argocd/argocd-repo-server-wi.yaml
 #
-# Annotates the argocd-repo-server K8s SA with the eso GCP SA so the
-# GCRAccessToken generator can use it to obtain a fresh OAuth2 token for GAR.
+# Annotates the argocd-repo-server K8s SA with its WIF-bound GCP SA.
 #
-# The eso GCP SA has roles/artifactregistry.reader (declared in wif.yml).
-# GCRAccessToken generator is namespace-scoped and looks for the SA in the
-# argocd namespace — so we annotate argocd-repo-server SA (not the ESO SA).
+# The GCP SA (hippo-dev-cluster-argocd-repo) has roles/artifactregistry.reader
+# and is bound to this K8s SA via Workload Identity (declared in wif.yml).
+#
+# Applied by: ArgoCD self-manage (hippo-platform App of Apps watches argocd/).
+# Note: current OCI auth uses _json_key via ESO — this annotation is present
+# for completeness and potential future use of ambient WIF-based auth.
 
 ---
 apiVersion: v1
