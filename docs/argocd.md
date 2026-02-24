@@ -35,9 +35,13 @@ For a component named `hippo-hello-world` with environments `dev` and `prod`, th
 
 | Requirement | Version |
 |---|---|
-| ArgoCD | >= 2.3 (ApplicationSet controller is bundled) |
+| ArgoCD | >= 2.6 (tested on v3.3.2) |
 | Helm | >= 3.10 |
 | Cluster access | `kubectl` pointed at target cluster |
+
+> **ArgoCD v3 OCI behavior:** ArgoCD v3 uses `repoURL` verbatim as the OCI image reference
+> path — it does not append the `chart` field. The `applicationset.yaml` template includes
+> `/hippo-service` directly in `repoURL` to produce the correct GAR v2 API path.
 
 ---
 

@@ -47,9 +47,10 @@ This creates:
 
 | Resource | Purpose |
 |---|---|
+| `hippo-dev-cluster-nodes` GCP SA | Dedicated least-privilege node SA (`artifactregistry.reader`, logging, monitoring) |
 | `hippo-dev-cluster-eso` GCP SA | Used by External Secrets Operator to read Secret Manager |
 | WIF binding for `eso` | Lets the ESO K8s SA impersonate the GCP SA via ambient ADC |
-| `hippo-dev-cluster-argocd-gar` GCP SA | Dedicated SA with `artifactregistry.reader` |
+| `hippo-dev-cluster-argocd-gar` GCP SA | Dedicated SA with `artifactregistry.reader`; its key is stored in Secret Manager |
 | Secret Manager secret shell (`hippo-dev-cluster-argocd-gar-key`) | Container for the SA key JSON; ESO reads from here |
 | `secretAccessor` IAM binding | Grants the ESO GCP SA access to the secret above |
 
@@ -67,10 +68,13 @@ shred -u /tmp/argocd-gar-key.json
 ```
 
 **Why a SA key instead of WIF token for ArgoCD?**
-ArgoCD's internal Go OCI client uses Basic Auth (`username:password`) when talking
-to OCI registries. GAR only accepts Basic Auth with a full SA JSON key as the
-password — not a short-lived OAuth2 token. ESO fetches the key from Secret Manager
-using WIF (no key in Git) and keeps the K8s Secret up to date automatically.
+ArgoCD's internal Go OCI client uses Basic Auth (`_json_key:password`) when resolving
+OCI Helm chart manifests from GAR. ESO fetches the key from Secret Manager using WIF
+(no key in Git) and keeps the K8s Secret up to date automatically.
+
+**Note on ArgoCD v3 OCI path behavior:** ArgoCD v3 does not append the `chart` field
+to the OCI v2 API path — it uses `repoURL` as-is. The `applicationset.yaml` includes the
+chart artifact name (`/hippo-service`) directly in `repoURL` to work around this.
 
 ---
 
@@ -87,7 +91,7 @@ The script runs these steps in order:
 | 1 | Creates the `argocd` namespace |
 | 2 | Installs ArgoCD via `--server-side` apply (avoids 262 KB annotation limit) |
 | 3 | Waits for ArgoCD CRDs and pods to be ready |
-| 4 | Installs ESO via Helm, applies `argocd/eso.yaml` (ClusterSecretStore), applies `argocd/argocd-gar-external-secret.yaml`, waits for Secret to sync |
+| 4 | Installs ESO via Helm (with WIF annotation on ESO K8s SA), applies `argocd/eso.yaml` (ClusterSecretStore), applies `argocd/argocd-gar-external-secret.yaml`, waits for Secret to sync |
 | 5 | Applies `argocd/platform-app.yaml` (App of Apps — ArgoCD self-manages `argocd/` from this point) |
 | 6 | Verifies applications and applicationsets |
 
@@ -179,9 +183,11 @@ git push origin v1.2.3
 
 | Decision | Reason |
 |---|---|
-| **ESO + SA key for ArgoCD OCI auth** | ArgoCD's Go OCI client uses Basic Auth; GAR only accepts a full SA JSON key as the password, not a short-lived token. ESO keeps the key out of Git and auto-syncs from Secret Manager. |
-| **WIF for ESO (ambient ADC)** | ESO's K8s SA is annotated with the GCP SA email; GKE injects a projected token via the metadata server. The ClusterSecretStore has no explicit auth block — ESO uses the pod's ambient ADC token directly. No STS token exchange config required. |
+| **ESO + SA key for ArgoCD OCI auth** | ArgoCD's Go OCI client uses Basic Auth (`_json_key:SA_JSON`). ESO keeps the key out of Git and auto-syncs from Secret Manager. |
+| **WIF for ESO (ambient ADC)** | ESO's K8s SA is annotated with the GCP SA email; GKE injects a projected token via the metadata server. The ClusterSecretStore has no explicit auth block — ESO uses the pod's ambient ADC token directly. |
+| **ArgoCD v3 OCI repoURL** | ArgoCD v3 uses `repoURL` verbatim as the OCI image path — it does not append the `chart` field. `repoURL` must include the chart artifact name (`/hippo-service`). |
 | **`Chart.yaml` keeps `version: 0.0.0` in source** | Release workflow stamps the real version at publish time — no version bump commits. |
 | **CI has no GCP dependency** | Lint and render work fully offline. Only the release workflow needs cloud credentials. |
 | **App of Apps pattern** | ArgoCD self-manages `argocd/` — any push to `main` is automatically synced, no manual `kubectl apply` after initial setup. |
+| **Dedicated GKE node SA** | `hippo-dev-cluster-nodes` SA has minimal roles (logging, monitoring, `artifactregistry.reader`). Configured in `values.yml` `service_account` field. |
 | **SA key rotation** | Delete the old key (`gcloud iam service-accounts keys delete <KEY_ID> --iam-account=hippo-dev-cluster-argocd-gar@...`), create a new one, and upload it with `gcloud secrets versions add hippo-dev-cluster-argocd-gar-key --data-file=...`. ESO detects the new Secret Manager version within 1h and updates the K8s Secret automatically. |
