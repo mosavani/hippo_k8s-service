@@ -70,8 +70,10 @@ spec:
       project: default
 
       sources:
-        # Chart from GAR OCI — version and registry from list elements above
-        - repoURL: "oci://{{gar_location}}-docker.pkg.dev/{{gar_project_id}}/{{gar_repository}}"
+        # Chart from GAR OCI — version and registry from list elements above.
+        # repoURL must include the chart artifact name (ArgoCD v3 does not append
+        # the chart field to the OCI v2 API path — it uses repoURL as-is).
+        - repoURL: "oci://{{gar_location}}-docker.pkg.dev/{{gar_project_id}}/{{gar_repository}}/hippo-service"
           chart: hippo-service
           targetRevision: "{{chart_version}}"
           helm:

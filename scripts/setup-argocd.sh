@@ -88,8 +88,9 @@ info "All ArgoCD pods are ready."
 kubectl get pods -n "${ARGOCD_NAMESPACE}"
 
 # ── Step 4: Install External Secrets Operator ──────────────────────────────────
-# ESO syncs the ArgoCD GAR SA key from GCP Secret Manager into the argocd
-# namespace so ArgoCD's OCI client can authenticate using _json_key Basic Auth.
+# ESO syncs the ArgoCD GAR SA key from GCP Secret Manager into argocd-gar-repo-creds.
+# That Secret registers the GAR OCI registry URL with ArgoCD and provides
+# _json_key Basic Auth credentials for OCI manifest resolution.
 info "Step 4/6 — Installing External Secrets Operator (ESO)..."
 
 helm repo add external-secrets https://charts.external-secrets.io 2>/dev/null || true
