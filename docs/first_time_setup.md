@@ -48,9 +48,23 @@ This creates:
 | Resource | Purpose |
 |---|---|
 | `hippo-dev-cluster-eso` GCP SA | Used by External Secrets Operator to read Secret Manager |
-| WIF binding for `eso` | Lets the ESO K8s SA impersonate the GCP SA |
+| WIF binding for `eso` | Lets the ESO K8s SA impersonate the GCP SA via ambient ADC |
 | `hippo-dev-cluster-argocd-gar` GCP SA | Dedicated SA with `artifactregistry.reader` |
-| SA key in Secret Manager (`hippo-dev-cluster-argocd-gar-key`) | Key JSON used by ArgoCD for GAR Basic Auth |
+| Secret Manager secret shell (`hippo-dev-cluster-argocd-gar-key`) | Container for the SA key JSON; ESO reads from here |
+| `secretAccessor` IAM binding | Grants the ESO GCP SA access to the secret above |
+
+**The SA key must be uploaded manually.** GCP org policy blocks Terraform from creating SA keys directly. After `make apply-dev`, run:
+
+```bash
+gcloud iam service-accounts keys create /tmp/argocd-gar-key.json \
+  --iam-account=hippo-dev-cluster-argocd-gar@project-ec2467ed-84cd-4898-b5b.iam.gserviceaccount.com
+
+gcloud secrets versions add hippo-dev-cluster-argocd-gar-key \
+  --data-file=/tmp/argocd-gar-key.json \
+  --project=project-ec2467ed-84cd-4898-b5b
+
+shred -u /tmp/argocd-gar-key.json
+```
 
 **Why a SA key instead of WIF token for ArgoCD?**
 ArgoCD's internal Go OCI client uses Basic Auth (`username:password`) when talking
@@ -166,8 +180,8 @@ git push origin v1.2.3
 | Decision | Reason |
 |---|---|
 | **ESO + SA key for ArgoCD OCI auth** | ArgoCD's Go OCI client uses Basic Auth; GAR only accepts a full SA JSON key as the password, not a short-lived token. ESO keeps the key out of Git and auto-syncs from Secret Manager. |
-| **WIF for ESO** | ESO uses its GKE WIF binding to impersonate the `hippo-dev-cluster-eso` GCP SA and read from Secret Manager — no static credentials anywhere in the chain. |
+| **WIF for ESO (ambient ADC)** | ESO's K8s SA is annotated with the GCP SA email; GKE injects a projected token via the metadata server. The ClusterSecretStore has no explicit auth block — ESO uses the pod's ambient ADC token directly. No STS token exchange config required. |
 | **`Chart.yaml` keeps `version: 0.0.0` in source** | Release workflow stamps the real version at publish time — no version bump commits. |
 | **CI has no GCP dependency** | Lint and render work fully offline. Only the release workflow needs cloud credentials. |
 | **App of Apps pattern** | ArgoCD self-manages `argocd/` — any push to `main` is automatically synced, no manual `kubectl apply` after initial setup. |
-| **SA key rotation** | Run `terraform taint google_service_account_key.argocd_gar && make apply-dev` in `hippo_cloud/environments/dev`. ESO detects the new Secret Manager version within 1h and updates the K8s Secret automatically. |
+| **SA key rotation** | Delete the old key (`gcloud iam service-accounts keys delete <KEY_ID> --iam-account=hippo-dev-cluster-argocd-gar@...`), create a new one, and upload it with `gcloud secrets versions add hippo-dev-cluster-argocd-gar-key --data-file=...`. ESO detects the new Secret Manager version within 1h and updates the K8s Secret automatically. |
