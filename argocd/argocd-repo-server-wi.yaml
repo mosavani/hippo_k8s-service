@@ -58,7 +58,7 @@ stringData:
   url: oci://us-central1-docker.pkg.dev/project-ec2467ed-84cd-4898-b5b/hippo-helm-charts
   enableOCI: "true"
   username: oauth2accesstoken
-  # Populated by gar-token-refresher CronJob — do not set a static value here.
-  # ArgoCD will fail to pull until the CronJob runs for the first time.
-  # The setup script triggers an immediate Job run after applying this file.
-  password: placeholder
+  # password is NOT stored in Git — it is injected at runtime by the
+  # gar-token-refresher CronJob (see gar-token-refresher.yaml).
+  # ArgoCD only syncs fields declared in this manifest; fields absent here
+  # are left untouched, so the CronJob's patches survive ArgoCD syncs.
