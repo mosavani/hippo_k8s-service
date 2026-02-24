@@ -16,9 +16,7 @@ set -euo pipefail
 
 ARGOCD_NAMESPACE="argocd"
 ARGOCD_INSTALL_URL="https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
-IMAGE_UPDATER_INSTALL_URL="https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml"
-# ESO installed via Helm in step 5 — see below
-IMAGE_UPDATER_FILE="argocd/argocd-image-updater.yaml"
+# ESO installed via Helm in step 4 — see below
 ESO_FILE="argocd/eso.yaml"
 EXTERNAL_SECRET_FILE="argocd/argocd-gar-external-secret.yaml"
 PLATFORM_APP_FILE="argocd/platform-app.yaml"
@@ -41,7 +39,7 @@ command -v kubectl >/dev/null 2>&1 || die "kubectl not found."
 command -v curl    >/dev/null 2>&1 || die "curl not found."
 command -v helm    >/dev/null 2>&1 || die "helm not found."
 
-for f in "${IMAGE_UPDATER_FILE}" "${ESO_FILE}" "${EXTERNAL_SECRET_FILE}" "${PLATFORM_APP_FILE}"; do
+for f in "${ESO_FILE}" "${EXTERNAL_SECRET_FILE}" "${PLATFORM_APP_FILE}"; do
   [[ -f "$f" ]] || die "$f not found. Run this script from the repo root."
 done
 
@@ -53,7 +51,7 @@ kubectl cluster-info >/dev/null 2>&1 \
   || die "Cannot reach the cluster API server. Check your kubeconfig and network."
 
 # ── Step 1: Create namespace ────────────────────────────────────────────────────
-info "Step 1/7 — Ensuring namespace '${ARGOCD_NAMESPACE}' exists..."
+info "Step 1/6 — Ensuring namespace '${ARGOCD_NAMESPACE}' exists..."
 if kubectl get namespace "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
   info "Namespace '${ARGOCD_NAMESPACE}' already exists."
 else
@@ -62,7 +60,7 @@ else
 fi
 
 # ── Step 2: Install ArgoCD ─────────────────────────────────────────────────────
-info "Step 2/7 — Installing ArgoCD (server-side apply)..."
+info "Step 2/6 — Installing ArgoCD (server-side apply)..."
 kubectl apply \
   --server-side \
   --force-conflicts \
@@ -71,7 +69,7 @@ kubectl apply \
 info "ArgoCD manifests applied."
 
 # ── Step 3: Wait for CRDs and pods ─────────────────────────────────────────────
-info "Step 3/7 — Waiting for ArgoCD CRDs to be established..."
+info "Step 3/6 — Waiting for ArgoCD CRDs to be established..."
 for crd in applications.argoproj.io applicationsets.argoproj.io appprojects.argoproj.io; do
   info "  Waiting for CRD: ${crd}"
   kubectl wait --for=condition=Established --timeout=120s crd/"${crd}" \
@@ -89,31 +87,10 @@ kubectl wait \
 info "All ArgoCD pods are ready."
 kubectl get pods -n "${ARGOCD_NAMESPACE}"
 
-# ── Step 4: Install ArgoCD Image Updater ───────────────────────────────────────
-info "Step 4/7 — Installing ArgoCD Image Updater and configuring WIF for GAR..."
-
-kubectl apply \
-  --server-side \
-  --force-conflicts \
-  -n "${ARGOCD_NAMESPACE}" \
-  -f "${IMAGE_UPDATER_INSTALL_URL}"
-
-kubectl apply \
-  --server-side \
-  --force-conflicts \
-  -n "${ARGOCD_NAMESPACE}" \
-  -f "${IMAGE_UPDATER_FILE}"
-
-kubectl rollout restart deployment/argocd-image-updater -n "${ARGOCD_NAMESPACE}"
-kubectl rollout status deployment/argocd-image-updater -n "${ARGOCD_NAMESPACE}" --timeout=120s \
-  || die "argocd-image-updater did not restart cleanly."
-
-info "Image Updater installed."
-
-# ── Step 5: Install External Secrets Operator ──────────────────────────────────
+# ── Step 4: Install External Secrets Operator ──────────────────────────────────
 # ESO syncs the ArgoCD GAR SA key from GCP Secret Manager into the argocd
 # namespace so ArgoCD's OCI client can authenticate using _json_key Basic Auth.
-info "Step 5/7 — Installing External Secrets Operator (ESO)..."
+info "Step 4/6 — Installing External Secrets Operator (ESO)..."
 
 helm repo add external-secrets https://charts.external-secrets.io 2>/dev/null || true
 helm repo update external-secrets
@@ -150,8 +127,8 @@ kubectl wait externalsecret/argocd-gar-repo-creds \
 
 info "argocd-gar-repo-creds Secret populated by ESO."
 
-# ── Step 6: Apply the platform App of Apps ─────────────────────────────────────
-info "Step 6/7 — Applying platform App of Apps (hippo-platform)..."
+# ── Step 5: Apply the platform App of Apps ─────────────────────────────────────
+info "Step 5/6 — Applying platform App of Apps (hippo-platform)..."
 kubectl apply \
   --server-side \
   --force-conflicts \
@@ -160,8 +137,8 @@ kubectl apply \
 
 info "hippo-platform Application applied. ArgoCD will now self-manage the argocd/ directory."
 
-# ── Step 7: Verify ─────────────────────────────────────────────────────────────
-info "Step 7/7 — Verifying..."
+# ── Step 6: Verify ─────────────────────────────────────────────────────────────
+info "Step 6/6 — Verifying..."
 kubectl get application hippo-platform -n "${ARGOCD_NAMESPACE}" || true
 kubectl get applicationset hippo-services -n "${ARGOCD_NAMESPACE}" 2>/dev/null || \
   warn "ApplicationSet not yet synced — ArgoCD may still be starting. Check in 60s."

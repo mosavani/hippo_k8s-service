@@ -5,7 +5,6 @@
 - `helm` >= 3.10
 - `kubectl` configured and pointed at the target GKE cluster
 - `gcloud` CLI authenticated
-- ArgoCD >= 2.3
 
 The GKE cluster itself is provisioned by `hippo_cloud`. Complete that setup first.
 
@@ -52,8 +51,6 @@ This creates:
 | WIF binding for `eso` | Lets the ESO K8s SA impersonate the GCP SA |
 | `hippo-dev-cluster-argocd-gar` GCP SA | Dedicated SA with `artifactregistry.reader` |
 | SA key in Secret Manager (`hippo-dev-cluster-argocd-gar-key`) | Key JSON used by ArgoCD for GAR Basic Auth |
-| `hippo-dev-cluster-image-updat` GCP SA | Used by ArgoCD Image Updater to poll GAR image tags |
-| WIF binding for `image-updater` | Lets the Image Updater K8s SA impersonate the GCP SA |
 
 **Why a SA key instead of WIF token for ArgoCD?**
 ArgoCD's internal Go OCI client uses Basic Auth (`username:password`) when talking
@@ -76,10 +73,9 @@ The script runs these steps in order:
 | 1 | Creates the `argocd` namespace |
 | 2 | Installs ArgoCD via `--server-side` apply (avoids 262 KB annotation limit) |
 | 3 | Waits for ArgoCD CRDs and pods to be ready |
-| 4 | Installs ArgoCD Image Updater + applies `argocd/argocd-image-updater.yaml` (WIF SA annotation + `provider: google` registry config) |
-| 5 | Installs ESO via Helm, applies `argocd/eso.yaml` (ClusterSecretStore), applies `argocd/argocd-gar-external-secret.yaml`, waits for Secret to sync |
-| 6 | Applies `argocd/platform-app.yaml` (App of Apps — ArgoCD self-manages `argocd/` from this point) |
-| 7 | Verifies applications and applicationsets |
+| 4 | Installs ESO via Helm, applies `argocd/eso.yaml` (ClusterSecretStore), applies `argocd/argocd-gar-external-secret.yaml`, waits for Secret to sync |
+| 5 | Applies `argocd/platform-app.yaml` (App of Apps — ArgoCD self-manages `argocd/` from this point) |
+| 6 | Verifies applications and applicationsets |
 
 After it completes:
 
@@ -170,8 +166,8 @@ git push origin v1.2.3
 | Decision | Reason |
 |---|---|
 | **ESO + SA key for ArgoCD OCI auth** | ArgoCD's Go OCI client uses Basic Auth; GAR only accepts a full SA JSON key as the password, not a short-lived token. ESO keeps the key out of Git and auto-syncs from Secret Manager. |
-| **WIF for Image Updater** | Image Updater has native ADC support (`provider: google`) and uses WIF tokens directly — no key needed. |
+| **WIF for ESO** | ESO uses its GKE WIF binding to impersonate the `hippo-dev-cluster-eso` GCP SA and read from Secret Manager — no static credentials anywhere in the chain. |
 | **`Chart.yaml` keeps `version: 0.0.0` in source** | Release workflow stamps the real version at publish time — no version bump commits. |
 | **CI has no GCP dependency** | Lint and render work fully offline. Only the release workflow needs cloud credentials. |
 | **App of Apps pattern** | ArgoCD self-manages `argocd/` — any push to `main` is automatically synced, no manual `kubectl apply` after initial setup. |
-| **SA key rotation** | Run `terraform taint module.argocd_gar_key.google_service_account_key.gar_key && make apply-dev` in `hippo_cloud`. ESO detects the new Secret Manager version within 1h and updates the K8s Secret automatically. |
+| **SA key rotation** | Run `terraform taint google_service_account_key.argocd_gar && make apply-dev` in `hippo_cloud/environments/dev`. ESO detects the new Secret Manager version within 1h and updates the K8s Secret automatically. |
