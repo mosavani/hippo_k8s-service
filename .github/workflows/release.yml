@@ -92,19 +92,16 @@ jobs:
             dist/hippo-service-${{ steps.version.outputs.version }}.tgz \
             oci://${GAR_LOCATION}-docker.pkg.dev/${GAR_PROJECT_ID}/${GAR_REPOSITORY}
 
-      # Bump chart_version in both applicationset.yaml (drives ArgoCD deployments)
-      # and chart-config.yaml (audit trail / reference). ArgoCD reads the version
-      # from applicationset.yaml directly — chart-config.yaml is for human reference.
-      - name: Bump chart_version in ArgoCD manifests
+      # Bump chart_version in applicationset.yaml so ArgoCD picks up the new
+      # chart version automatically on the next sync (no manual edits needed).
+      - name: Bump chart_version in applicationset.yaml
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           sed -i "s/chart_version: \"[0-9]*\.[0-9]*\.[0-9]*\"/chart_version: \"${VERSION}\"/" \
             argocd/applicationset.yaml
-          sed -i "s/^chart_version:.*/chart_version: \"${VERSION}\"/" \
-            argocd/chart-config.yaml
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add argocd/applicationset.yaml argocd/chart-config.yaml
+          git add argocd/applicationset.yaml
           git commit -m "chore: bump chart_version to ${VERSION} [skip ci]"
           git push origin main
 
@@ -116,4 +113,4 @@ jobs:
           echo "oci://${GAR_LOCATION}-docker.pkg.dev/${GAR_PROJECT_ID}/${GAR_REPOSITORY}/hippo-service:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
           echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "chart_version bumped to ${{ steps.version.outputs.version }} in applicationset.yaml and chart-config.yaml" >> "$GITHUB_STEP_SUMMARY"
+          echo "chart_version bumped to ${{ steps.version.outputs.version }} in applicationset.yaml" >> "$GITHUB_STEP_SUMMARY"
