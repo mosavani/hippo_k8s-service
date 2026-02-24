@@ -15,6 +15,7 @@ ARGOCD_NAMESPACE="argocd"
 ARGOCD_INSTALL_URL="https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
 IMAGE_UPDATER_INSTALL_URL="https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml"
 ARGOCD_WI_FILE="argocd/argocd-repo-server-wi.yaml"
+TOKEN_REFRESHER_FILE="argocd/gar-token-refresher.yaml"
 IMAGE_UPDATER_FILE="argocd/argocd-image-updater.yaml"
 PLATFORM_APP_FILE="argocd/platform-app.yaml"
 
@@ -34,6 +35,8 @@ info "Checking prerequisites..."
 
 command -v kubectl >/dev/null 2>&1 || die "kubectl not found. Install it and configure access to the cluster."
 command -v curl    >/dev/null 2>&1 || die "curl not found."
+[[ -f "${TOKEN_REFRESHER_FILE}" ]] \
+  || die "${TOKEN_REFRESHER_FILE} not found. Run this script from the repo root."
 [[ -f "${IMAGE_UPDATER_FILE}" ]] \
   || die "${IMAGE_UPDATER_FILE} not found. Run this script from the repo root."
 
@@ -49,7 +52,7 @@ kubectl cluster-info >/dev/null 2>&1 \
   || die "Cannot reach the cluster API server. Check your kubeconfig and network."
 
 # ── Step 1: Create namespace ────────────────────────────────────────────────────
-info "Step 1/7 — Ensuring namespace '${ARGOCD_NAMESPACE}' exists..."
+info "Step 1/8 — Ensuring namespace '${ARGOCD_NAMESPACE}' exists..."
 if kubectl get namespace "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
   info "Namespace '${ARGOCD_NAMESPACE}' already exists."
 else
@@ -58,7 +61,7 @@ else
 fi
 
 # ── Step 2: Install ArgoCD (server-side apply avoids annotation size limit) ────
-info "Step 2/7 — Installing ArgoCD (server-side apply)..."
+info "Step 2/8 — Installing ArgoCD (server-side apply)..."
 kubectl apply \
   --server-side \
   --force-conflicts \
@@ -67,7 +70,7 @@ kubectl apply \
 info "ArgoCD manifests applied."
 
 # ── Step 3: Wait for CRDs to be established ─────────────────────────────────────
-info "Step 3/7 — Waiting for ArgoCD CRDs to be established..."
+info "Step 3/8 — Waiting for ArgoCD CRDs to be established..."
 
 for crd in \
   applications.argoproj.io \
@@ -84,7 +87,7 @@ done
 info "All ArgoCD CRDs established."
 
 # ── Step 4: Wait for all ArgoCD pods to be ready ────────────────────────────────
-info "Step 4/7 — Waiting for ArgoCD pods to be ready (timeout: 3m)..."
+info "Step 4/8 — Waiting for ArgoCD pods to be ready (timeout: 3m)..."
 kubectl wait \
   --for=condition=Ready \
   pods --all \
@@ -96,7 +99,7 @@ info "All ArgoCD pods are ready."
 kubectl get pods -n "${ARGOCD_NAMESPACE}"
 
 # ── Step 5: Configure Workload Identity for argocd-repo-server ──────────────────
-info "Step 5/7 — Configuring Workload Identity for argocd-repo-server..."
+info "Step 5/8 — Configuring Workload Identity for argocd-repo-server..."
 
 [[ -f "${ARGOCD_WI_FILE}" ]] \
   || die "${ARGOCD_WI_FILE} not found. Run this script from the repo root."
@@ -114,8 +117,37 @@ kubectl rollout status deployment/argocd-repo-server -n "${ARGOCD_NAMESPACE}" --
 
 info "Workload Identity configured for argocd-repo-server."
 
-# ── Step 6: Install ArgoCD Image Updater + configure WIF for GAR ────────────────
-info "Step 6/7 — Installing ArgoCD Image Updater and configuring WIF for GAR..."
+# ── Step 6: Deploy GAR token refresher ──────────────────────────────────────────
+# The CronJob runs every 45 min and patches the argocd-gar-repo-creds Secret
+# with a fresh GCP OAuth2 token. ArgoCD's Go OCI client reads from that Secret.
+# We trigger an immediate Job run here so the Secret is populated before
+# platform-app.yaml is applied — otherwise the first ArgoCD sync will 403.
+info "Step 6/8 — Deploying GAR token refresher and seeding initial token..."
+
+kubectl apply \
+  --server-side \
+  --force-conflicts \
+  -n "${ARGOCD_NAMESPACE}" \
+  -f "${TOKEN_REFRESHER_FILE}"
+
+# Trigger an immediate run so the placeholder password is replaced before
+# ArgoCD tries to pull the chart for the first time.
+kubectl create job gar-token-seed \
+  --from=cronjob/gar-token-refresher \
+  -n "${ARGOCD_NAMESPACE}" \
+  --dry-run=client -o yaml \
+  | kubectl apply -f -
+
+kubectl wait job/gar-token-seed \
+  -n "${ARGOCD_NAMESPACE}" \
+  --for=condition=Complete \
+  --timeout=60s \
+  || die "Initial token seed Job did not complete. Check: kubectl logs -l job-name=gar-token-seed -n ${ARGOCD_NAMESPACE}"
+
+info "GAR token refresher deployed and initial token seeded."
+
+# ── Step 7: Install ArgoCD Image Updater + configure WIF for GAR ────────────────
+info "Step 7/8 — Installing ArgoCD Image Updater and configuring WIF for GAR..."
 
 # Install upstream Image Updater manifest (creates Deployment, SA, RBAC).
 kubectl apply \
@@ -139,11 +171,11 @@ kubectl rollout status deployment/argocd-image-updater -n "${ARGOCD_NAMESPACE}" 
 
 info "Image Updater installed and configured with WIF for GAR."
 
-# ── Step 7: Apply the platform App of Apps ──────────────────────────────────────
+# ── Step 8: Apply the platform App of Apps ──────────────────────────────────────
 # This is the only manual apply ever needed. After this, ArgoCD watches
 # argocd/ in this repo and self-updates: any push to main (applicationset.yaml,
 # chart-config.yaml, platform-app.yaml) is automatically synced to the cluster.
-info "Step 7/7 — Applying platform App of Apps (hippo-platform)..."
+info "Step 8/8 — Applying platform App of Apps (hippo-platform)..."
 kubectl apply \
   --server-side \
   --force-conflicts \

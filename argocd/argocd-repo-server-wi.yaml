@@ -1,29 +1,29 @@
 # argocd/argocd-repo-server-wi.yaml
 #
 # Configures argocd-repo-server to pull OCI Helm charts from GAR using
-# Workload Identity — no static credentials or service account keys.
+# the Token Bridge pattern — no static long-lived credentials.
 #
 # Why this is needed:
-#   ArgoCD has no native OCI + WIF support. The repo-creds Secret with
-#   enableOCI: "true" only works for public registries. For private GAR OCI,
-#   the repo-server needs docker-credential-gcr wired in so it can exchange
-#   the ambient WIF token for a GAR access token at pull time.
+#   ArgoCD's internal Go OCI client does NOT use docker-credential-gcr or
+#   DOCKER_CONFIG. It reads auth from the repository Secret directly and
+#   injects an Authorization: Bearer <token> header. A CronJob
+#   (gar-token-refresher.yaml) keeps the password field populated with a
+#   fresh GCP OAuth2 token fetched via WIF from the metadata server.
 #
 # How it works:
 #   1. argocd-repo-server K8s SA is annotated with the GCP SA email.
 #   2. GKE WIF binds the K8s SA → GCP SA (hippo-dev-cluster-argocd-repo).
-#   3. An initContainer downloads docker-credential-gcr and writes a
-#      Docker config that routes GAR auth through it.
-#   4. The main argocd-repo-server container inherits the Docker config
-#      and uses it to get a fresh token from the metadata server on each pull.
-#   5. The repo-creds Secret registers the GAR OCI registry with ArgoCD
-#      (no username/password — auth is handled by the credential helper).
+#   3. argocd-gar-repo-creds Secret (type: repository) holds the GAR URL,
+#      username=oauth2accesstoken, and password=<live token>.
+#   4. gar-token-refresher CronJob (see gar-token-refresher.yaml) patches
+#      the password every 45 minutes — well within the 3600s token expiry.
+#   5. ArgoCD repo-server picks up the Secret change on its next sync.
 #
 # The GCP SA and WIF binding are declared in:
-#   hippo_cloud/environments/dev/wif.yml  →  workloads[name=argocd-repo-server]
+#   hippo_cloud/environments/dev/wif.yml → workloads[name=argocd-repo-server]
 # Run `make apply-dev` in hippo_cloud after any wif.yml changes.
 #
-# Applied by: scripts/setup-argocd.sh (step 5, before platform-app.yaml)
+# Applied by: scripts/setup-argocd.sh (step 5, before gar-token-refresher.yaml)
 
 ---
 # 1. Annotate the argocd-repo-server K8s SA so GKE WIF binds it to the GCP SA.
@@ -36,104 +36,29 @@ metadata:
     iam.gke.io/gcp-service-account: hippo-dev-cluster-argocd-repo@project-ec2467ed-84cd-4898-b5b.iam.gserviceaccount.com
 
 ---
-# 2. Patch argocd-repo-server Deployment to add:
-#    - initContainer: downloads docker-credential-gcr and writes Docker config
-#    - volumeMounts + volumes: share the binary and config with the main container
-#    - env vars: tell Helm/Docker where to find the config and binary
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: argocd-repo-server
-  namespace: argocd
-spec:
-  template:
-    spec:
-      # Use the annotated K8s SA so the metadata server returns WIF tokens
-      serviceAccountName: argocd-repo-server
-
-      initContainers:
-        - name: install-docker-credential-gcr
-          image: alpine:3.19
-          imagePullPolicy: IfNotPresent
-          command:
-            - sh
-            - -c
-            - |
-              set -e
-              apk add --no-cache curl tar
-
-              # Download docker-credential-gcr — the bridge between Docker/Helm
-              # and the GKE metadata server WIF token
-              curl -sSL -o /tmp/docker-credential-gcr.tar.gz \
-                https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v2.1.22/docker-credential-gcr_linux_amd64-2.1.22.tar.gz
-              tar -xzf /tmp/docker-credential-gcr.tar.gz -C /tmp
-              mv /tmp/docker-credential-gcr /custom/bin/docker-credential-gcr
-              chmod +x /custom/bin/docker-credential-gcr
-
-              # ArgoCD v3 sets HELM_CONFIG_HOME=/helm-working-dir, so Helm reads
-              # registry auth from /helm-working-dir/registry/config.json — NOT
-              # from DOCKER_CONFIG. Write credHelpers to both locations so both
-              # the Docker client and Helm's OCI client find the credential helper.
-              CRED_HELPER='{"credHelpers":{"us-central1-docker.pkg.dev":"gcr"}}'
-
-              mkdir -p /home/argocd/.docker
-              echo "$CRED_HELPER" > /home/argocd/.docker/config.json
-
-              mkdir -p /helm-working-dir/registry
-              echo "$CRED_HELPER" > /helm-working-dir/registry/config.json
-
-              # argocd runs as uid 999
-              chown -R 999:999 /home/argocd/.docker /helm-working-dir
-          securityContext:
-            runAsUser: 0
-          volumeMounts:
-            - name: docker-credential-gcr
-              mountPath: /custom/bin
-            - name: docker-config
-              mountPath: /home/argocd/.docker
-            - name: helm-working-dir
-              mountPath: /helm-working-dir
-
-      containers:
-        - name: argocd-repo-server
-          env:
-            # Add /custom/bin to PATH so docker-credential-gcr is found by Helm
-            - name: PATH
-              value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/custom/bin"
-            # Tell Docker client where the config.json lives
-            - name: DOCKER_CONFIG
-              value: "/home/argocd/.docker"
-            # Required for Helm OCI support
-            - name: HELM_EXPERIMENTAL_OCI
-              value: "1"
-          volumeMounts:
-            - name: docker-credential-gcr
-              mountPath: /custom/bin
-            - name: docker-config
-              mountPath: /home/argocd/.docker
-            - name: helm-working-dir
-              mountPath: /helm-working-dir
-
-      volumes:
-        - name: docker-credential-gcr
-          emptyDir: {}
-        - name: docker-config
-          emptyDir: {}
-        - name: helm-working-dir
-          emptyDir: {}
-
----
-# 3. Register the GAR OCI registry as a repo-creds template.
-#    ArgoCD matches any repoURL starting with this prefix.
-#    No username/password — docker-credential-gcr handles auth via WIF.
+# 2. Repository Secret: ArgoCD's Go OCI client reads credentials from here.
+#
+#    secret-type: repository  →  ArgoCD treats this as a named repository entry.
+#    username: oauth2accesstoken  →  the literal username GAR expects for token auth.
+#    password: placeholder  →  replaced every 45 min by gar-token-refresher CronJob.
+#
+#    The url must be the full OCI repo path ArgoCD uses in the ApplicationSet,
+#    not just the registry hostname, so ArgoCD matches this credential to the
+#    correct source. It uses prefix matching on repoURL.
 apiVersion: v1
 kind: Secret
 metadata:
   name: argocd-gar-repo-creds
   namespace: argocd
   labels:
-    argocd.argoproj.io/secret-type: repo-creds
+    argocd.argoproj.io/secret-type: repository
 stringData:
   type: helm
-  url: us-central1-docker.pkg.dev
+  name: hippo-helm-charts-gar
+  url: oci://us-central1-docker.pkg.dev/project-ec2467ed-84cd-4898-b5b/hippo-helm-charts
   enableOCI: "true"
+  username: oauth2accesstoken
+  # Populated by gar-token-refresher CronJob — do not set a static value here.
+  # ArgoCD will fail to pull until the CronJob runs for the first time.
+  # The setup script triggers an immediate Job run after applying this file.
+  password: placeholder

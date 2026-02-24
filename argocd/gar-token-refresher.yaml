@@ -1,0 +1,146 @@
+# argocd/gar-token-refresher.yaml
+#
+# Token Bridge: keeps argocd-gar-repo-creds populated with a fresh GCP
+# OAuth2 access token so ArgoCD's internal Go OCI client can authenticate
+# to GAR without static credentials.
+#
+# Why this is needed:
+#   ArgoCD's internal Go OCI client does NOT use docker-credential-gcr or
+#   DOCKER_CONFIG. It reads credentials directly from the repository Secret
+#   (argocd.argoproj.io/secret-type: repository) and injects them as an
+#   Authorization: Bearer <token> header. GCP tokens expire after 3600s,
+#   so a CronJob refreshes the Secret every 45 minutes — well within the
+#   expiry window and safe against missed runs.
+#
+# How it works:
+#   1. The CronJob pod runs under the gar-token-refresher K8s SA.
+#   2. GKE WIF binds that SA → hippo-dev-cluster-gar-token-re GCP SA.
+#   3. The pod calls the GKE metadata server to get a fresh access token.
+#   4. kubectl patches argocd-gar-repo-creds with the new token as password.
+#   5. ArgoCD repo-server picks up the Secret change on its next sync cycle.
+#
+# RBAC: the CronJob SA has only get + patch on the single Secret.
+# It cannot read other Secrets or touch any other resources.
+#
+# The GCP SA and WIF binding are declared in:
+#   hippo_cloud/environments/dev/wif.yml → workloads[name=gar-token-refresher]
+# Run `make apply-dev` in hippo_cloud after any wif.yml changes.
+#
+# Applied by: scripts/setup-argocd.sh (step 6, before platform-app.yaml)
+
+---
+# 1. Dedicated K8s SA for the CronJob.
+#    Annotated so GKE WIF injects the projected token for GCP API access.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gar-token-refresher
+  namespace: argocd
+  annotations:
+    # GCP SA created by Terraform via hippo_cloud/environments/dev/wif.yml
+    # account_id: hippo-dev-cluster-gar-token-re (truncated to 30 chars)
+    iam.gke.io/gcp-service-account: hippo-dev-cluster-gar-token-re@project-ec2467ed-84cd-4898-b5b.iam.gserviceaccount.com
+
+---
+# 2. Role: only get + patch on the one Secret that holds GAR credentials.
+#    No wildcard verbs, no other resources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gar-token-refresher
+  namespace: argocd
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["argocd-gar-repo-creds"]
+    verbs: ["get", "patch"]
+
+---
+# 3. Bind the Role to the CronJob SA.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gar-token-refresher
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: gar-token-refresher
+    namespace: argocd
+roleRef:
+  kind: Role
+  name: gar-token-refresher
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# 4. CronJob: runs every 45 minutes.
+#    GCP tokens expire at 3600s. 45-minute cadence gives 3 refresh attempts
+#    before expiry — safe against a single missed run.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gar-token-refresher
+  namespace: argocd
+spec:
+  schedule: "*/45 * * * *"
+  concurrencyPolicy: Forbid        # never overlap; if one hangs, skip next run
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # Fail fast — if the metadata server or kubectl patch takes > 60s
+      # something is wrong and we should not block future runs.
+      activeDeadlineSeconds: 60
+      template:
+        spec:
+          serviceAccountName: gar-token-refresher
+          restartPolicy: OnFailure
+
+          containers:
+            - name: refresher
+              # Use the official kubectl image — stable, minimal, no shell deps.
+              # bitnami/kubectl mirrors the K8s release cadence and is widely used.
+              image: bitnami/kubectl:1.32
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+
+                  # Fetch a fresh OAuth2 access token from the GKE metadata server.
+                  # The metadata server returns a token scoped to the GCP SA bound
+                  # to this pod's K8s SA via WIF (gar-token-refresher → hippo-dev-cluster-gar-token-re).
+                  TOKEN=$(curl -sf \
+                    -H "Metadata-Flavor: Google" \
+                    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+                    | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
+
+                  if [ -z "$TOKEN" ]; then
+                    echo "ERROR: empty token from metadata server" >&2
+                    exit 1
+                  fi
+
+                  echo "Token fetched (length=${#TOKEN}), patching Secret..."
+
+                  # Patch only the password field. kubectl reads the in-cluster
+                  # kubeconfig automatically; RBAC above limits this to get+patch
+                  # on argocd-gar-repo-creds only.
+                  kubectl patch secret argocd-gar-repo-creds \
+                    -n argocd \
+                    --type merge \
+                    -p "{\"stringData\":{\"password\":\"${TOKEN}\"}}"
+
+                  echo "Secret patched successfully."
+
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+
+          # No hostNetwork, no privileged, no extra capabilities.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001   # bitnami/kubectl default non-root user
