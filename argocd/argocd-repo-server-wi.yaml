@@ -1,64 +1,27 @@
 # argocd/argocd-repo-server-wi.yaml
 #
-# Configures argocd-repo-server to pull OCI Helm charts from GAR using
-# the Token Bridge pattern — no static long-lived credentials.
+# Placeholder for the argocd-gar-repo-creds repository Secret.
 #
-# Why this is needed:
-#   ArgoCD's internal Go OCI client does NOT use docker-credential-gcr or
-#   DOCKER_CONFIG. It reads auth from the repository Secret directly and
-#   injects an Authorization: Bearer <token> header. A CronJob
-#   (gar-token-refresher.yaml) keeps the password field populated with a
-#   fresh GCP OAuth2 token fetched via WIF from the metadata server.
+# This Secret is now fully managed by External Secrets Operator (ESO).
+# See: argocd/argocd-gar-external-secret.yaml
 #
-# How it works:
-#   1. argocd-repo-server K8s SA is annotated with the GCP SA email.
-#   2. GKE WIF binds the K8s SA → GCP SA (hippo-dev-cluster-argocd-repo).
-#   3. argocd-gar-repo-creds Secret (type: repository) holds the GAR URL,
-#      username=oauth2accesstoken, and password=<live token>.
-#   4. gar-token-refresher CronJob (see gar-token-refresher.yaml) patches
-#      the password every 45 minutes — well within the 3600s token expiry.
-#   5. ArgoCD repo-server picks up the Secret change on its next sync.
+# ESO creates and owns this Secret — do NOT define it here or ArgoCD's
+# server-side apply will conflict with ESO's ownership annotation.
+# This file is kept to document the auth architecture and is applied
+# by setup-argocd.sh only to ensure the namespace exists before ESO runs.
 #
-# The GCP SA and WIF binding are declared in:
-#   hippo_cloud/environments/dev/wif.yml → workloads[name=argocd-repo-server]
-# Run `make apply-dev` in hippo_cloud after any wif.yml changes.
+# Auth flow:
+#   GCP Secret Manager (SA key JSON)
+#     ──ESO (WIF)──►  argocd-gar-repo-creds K8s Secret
+#                           ↓
+#                     ArgoCD repo-server
+#                     username: _json_key
+#                     password: <full SA key JSON>
+#                           ↓
+#                     GAR Basic Auth → pulls OCI Helm chart
 #
-# Applied by: scripts/setup-argocd.sh (step 5, before gar-token-refresher.yaml)
-
----
-# 1. Annotate the argocd-repo-server K8s SA so GKE WIF binds it to the GCP SA.
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: argocd-repo-server
-  namespace: argocd
-  annotations:
-    iam.gke.io/gcp-service-account: hippo-dev-cluster-argocd-repo@project-ec2467ed-84cd-4898-b5b.iam.gserviceaccount.com
-
----
-# 2. Repository Secret: ArgoCD's Go OCI client reads credentials from here.
-#
-#    secret-type: repository  →  ArgoCD treats this as a named repository entry.
-#    username: oauth2accesstoken  →  the literal username GAR expects for token auth.
-#    password: placeholder  →  replaced every 45 min by gar-token-refresher CronJob.
-#
-#    The url must be the full OCI repo path ArgoCD uses in the ApplicationSet,
-#    not just the registry hostname, so ArgoCD matches this credential to the
-#    correct source. It uses prefix matching on repoURL.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: argocd-gar-repo-creds
-  namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: repository
-stringData:
-  type: helm
-  name: hippo-helm-charts-gar
-  url: oci://us-central1-docker.pkg.dev/project-ec2467ed-84cd-4898-b5b/hippo-helm-charts
-  enableOCI: "true"
-  username: oauth2accesstoken
-  # password is NOT stored in Git — it is injected at runtime by the
-  # gar-token-refresher CronJob (see gar-token-refresher.yaml).
-  # ArgoCD only syncs fields declared in this manifest; fields absent here
-  # are left untouched, so the CronJob's patches survive ArgoCD syncs.
+# GCP resources managed by Terraform in hippo_cloud:
+#   - GCP SA:            hippo-dev-cluster-argocd-gar (artifactregistry.reader)
+#   - SA key:            stored in Secret Manager as hippo-dev-cluster-argocd-gar-key
+#   - ESO GCP SA:        hippo-dev-cluster-eso (secretmanager.secretAccessor on above)
+#   - WIF binding:       wif.yml → workloads[name=eso]

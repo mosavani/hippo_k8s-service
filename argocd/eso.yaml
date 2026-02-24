@@ -1,0 +1,53 @@
+# argocd/eso.yaml
+#
+# External Secrets Operator (ESO) — installed cluster-wide, configured to
+# read from GCP Secret Manager using Workload Identity.
+#
+# Why ESO?
+#   ArgoCD's internal Go OCI client uses Basic Auth (username + password) for
+#   OCI registries. GAR accepts Basic Auth only with a full SA JSON key as the
+#   password. ESO syncs that key from Secret Manager into the argocd namespace
+#   automatically, so no key material ever lives in Git.
+#
+# How it works:
+#   1. ESO runs in the external-secrets namespace under the 'external-secrets' K8s SA.
+#   2. GKE WIF binds that SA → hippo-dev-cluster-eso GCP SA (declared in wif.yml).
+#   3. The argocd-gar-key Terraform module grants that GCP SA secretAccessor on
+#      the specific Secret Manager secret holding the ArgoCD GAR SA key.
+#   4. The ClusterSecretStore defined here uses that identity to read Secret Manager.
+#   5. ExternalSecret (argocd-gar-external-secret.yaml) declares what to fetch
+#      and where to write it in the argocd namespace.
+#
+# Applied by: scripts/setup-argocd.sh (step 6, before argocd-gar-external-secret.yaml)
+# Prerequisites: `make apply-dev` in hippo_cloud must have run first so the
+#   ESO GCP SA and its WIF binding exist before the ClusterSecretStore is created.
+
+---
+# 1. Install ESO from the upstream stable Helm chart via a manifest install.
+#    The setup script applies the upstream install URL directly; this comment
+#    documents the version pinned in setup-argocd.sh for auditability.
+#    Current pin: external-secrets v0.10.x (stable channel).
+#    See: https://external-secrets.io/latest/introduction/getting-started/
+
+---
+# 2. ClusterSecretStore: tells ESO how to authenticate to GCP Secret Manager.
+#    Uses Workload Identity — the ESO pod's K8s SA is annotated in wif.yml and
+#    GKE injects the projected token automatically.
+apiVersion: external-secrets.io/v1beta1
+kind: ClusterSecretStore
+metadata:
+  name: gcp-secret-manager
+spec:
+  provider:
+    gcpsm:
+      projectID: project-ec2467ed-84cd-4898-b5b
+      # auth.workloadIdentity tells ESO to use the K8s SA token for WIF.
+      # No static credentials — the GKE metadata server issues the GCP token.
+      auth:
+        workloadIdentity:
+          clusterLocation: us-central1-a
+          clusterName: hippo-dev-cluster
+          clusterProjectID: project-ec2467ed-84cd-4898-b5b
+          serviceAccountRef:
+            name: external-secrets
+            namespace: external-secrets
