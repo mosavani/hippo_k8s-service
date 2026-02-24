@@ -9,6 +9,14 @@
 The GKE cluster itself is provisioned by `hippo_cloud`. Complete that setup first before continuing here.
 
 ---
+Login to the gcloud and enable kubectl 
+```
+gcloud auth login
+gcloud container clusters get-credentials hippo-dev-cluster \
+    --zone us-central1-a \
+    --project project-ec2467ed-84cd-4898-b5b
+  kubectl cluster-info   # should return the API server URL
+```
 
 ## Step 1 — Clone and verify local tooling
 
@@ -21,7 +29,40 @@ make test    # renders all test scenarios in tests/values/
 
 ---
 
-## Step 2 — Install ArgoCD and apply the ApplicationSet
+## Step 2 — GCP prerequisites (WIF bindings via Terraform)
+
+All GCP service accounts and WIF bindings are declared in `hippo_cloud/environments/dev/wif.yml`
+and managed by Terraform. No manual `gcloud` commands needed.
+
+The following entries must be present in `wif.yml` before running the setup script:
+
+```yaml
+workloads:
+  - name: argocd-repo-server      # GCP SA: hippo-dev-cluster-argocd-rep@...
+    k8s_namespace: argocd
+    k8s_service_account: argocd-repo-server
+    gcp_roles:
+      - roles/artifactregistry.reader
+
+  - name: image-updater            # GCP SA: hippo-dev-cluster-image-updat@...
+    k8s_namespace: argocd
+    k8s_service_account: argocd-image-updater
+    gcp_roles:
+      - roles/artifactregistry.reader
+```
+
+Both use `roles/artifactregistry.reader` only. The SA `account_id` is auto-generated as
+`{cluster_name}-{workload_name}` truncated to 30 chars by the workload-identity Terraform module.
+
+After updating `wif.yml`, apply in `hippo_cloud`:
+
+```bash
+make apply-dev
+```
+
+---
+
+## Step 3 — Install ArgoCD and Image Updater
 
 Use the setup script — it handles CRD readiness, the annotation-size issue with `kubectl apply`, and pod readiness in the correct order:
 
@@ -34,7 +75,9 @@ The script:
 2. Installs ArgoCD using `--server-side` apply (avoids the 262 KB annotation limit)
 3. Waits for all ArgoCD CRDs (`applications`, `applicationsets`, `appprojects`) to be established
 4. Waits for all ArgoCD pods to be ready
-5. Applies `argocd/applicationset.yaml` using `--server-side` apply
+5. Applies `argocd/argocd-repo-server-wi.yaml` — annotates the repo-server SA and wires `docker-credential-gcr` for OCI Helm chart pulls
+6. Installs ArgoCD Image Updater and applies `argocd/argocd-image-updater.yaml` — annotates the Image Updater SA and configures `provider: google` for image tag polling
+7. Applies `argocd/platform-app.yaml` (App of Apps bootstrap)
 
 Run from the repo root. Requires `kubectl` with an active cluster context.
 
@@ -66,7 +109,7 @@ Login with username `admin` and the printed password.
 
 ---
 
-## Step 3 — Configure GitHub Secrets (for release workflow)
+## Step 4 — Configure GitHub Secrets (for release workflow)
 
 The release workflow authenticates to GCP using **Workload Identity Federation**. The GCP service account and WIF binding are declared in `hippo_cloud/environments/dev/wif.yml` under `github_ci` and managed by Terraform.
 

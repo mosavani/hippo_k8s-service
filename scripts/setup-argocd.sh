@@ -13,7 +13,9 @@ set -euo pipefail
 
 ARGOCD_NAMESPACE="argocd"
 ARGOCD_INSTALL_URL="https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+IMAGE_UPDATER_INSTALL_URL="https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/stable/manifests/install.yaml"
 ARGOCD_WI_FILE="argocd/argocd-repo-server-wi.yaml"
+IMAGE_UPDATER_FILE="argocd/argocd-image-updater.yaml"
 PLATFORM_APP_FILE="argocd/platform-app.yaml"
 
 # ── Colours ────────────────────────────────────────────────────────────────────
@@ -32,6 +34,8 @@ info "Checking prerequisites..."
 
 command -v kubectl >/dev/null 2>&1 || die "kubectl not found. Install it and configure access to the cluster."
 command -v curl    >/dev/null 2>&1 || die "curl not found."
+[[ -f "${IMAGE_UPDATER_FILE}" ]] \
+  || die "${IMAGE_UPDATER_FILE} not found. Run this script from the repo root."
 
 CONTEXT=$(kubectl config current-context 2>/dev/null) \
   || die "No kubectl context set. Run: gcloud container clusters get-credentials <cluster> --zone <zone> --project <project>"
@@ -45,7 +49,7 @@ kubectl cluster-info >/dev/null 2>&1 \
   || die "Cannot reach the cluster API server. Check your kubeconfig and network."
 
 # ── Step 1: Create namespace ────────────────────────────────────────────────────
-info "Step 1/6 — Ensuring namespace '${ARGOCD_NAMESPACE}' exists..."
+info "Step 1/7 — Ensuring namespace '${ARGOCD_NAMESPACE}' exists..."
 if kubectl get namespace "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
   info "Namespace '${ARGOCD_NAMESPACE}' already exists."
 else
@@ -54,7 +58,7 @@ else
 fi
 
 # ── Step 2: Install ArgoCD (server-side apply avoids annotation size limit) ────
-info "Step 2/6 — Installing ArgoCD (server-side apply)..."
+info "Step 2/7 — Installing ArgoCD (server-side apply)..."
 kubectl apply \
   --server-side \
   --force-conflicts \
@@ -63,7 +67,7 @@ kubectl apply \
 info "ArgoCD manifests applied."
 
 # ── Step 3: Wait for CRDs to be established ─────────────────────────────────────
-info "Step 3/6 — Waiting for ArgoCD CRDs to be established..."
+info "Step 3/7 — Waiting for ArgoCD CRDs to be established..."
 
 for crd in \
   applications.argoproj.io \
@@ -80,7 +84,7 @@ done
 info "All ArgoCD CRDs established."
 
 # ── Step 4: Wait for all ArgoCD pods to be ready ────────────────────────────────
-info "Step 4/6 — Waiting for ArgoCD pods to be ready (timeout: 3m)..."
+info "Step 4/7 — Waiting for ArgoCD pods to be ready (timeout: 3m)..."
 kubectl wait \
   --for=condition=Ready \
   pods --all \
@@ -92,7 +96,7 @@ info "All ArgoCD pods are ready."
 kubectl get pods -n "${ARGOCD_NAMESPACE}"
 
 # ── Step 5: Configure Workload Identity for argocd-repo-server ──────────────────
-info "Step 5/6 — Configuring Workload Identity for argocd-repo-server..."
+info "Step 5/7 — Configuring Workload Identity for argocd-repo-server..."
 
 [[ -f "${ARGOCD_WI_FILE}" ]] \
   || die "${ARGOCD_WI_FILE} not found. Run this script from the repo root."
@@ -110,11 +114,36 @@ kubectl rollout status deployment/argocd-repo-server -n "${ARGOCD_NAMESPACE}" --
 
 info "Workload Identity configured for argocd-repo-server."
 
-# ── Step 6: Apply the platform App of Apps ──────────────────────────────────────
+# ── Step 6: Install ArgoCD Image Updater + configure WIF for GAR ────────────────
+info "Step 6/7 — Installing ArgoCD Image Updater and configuring WIF for GAR..."
+
+# Install upstream Image Updater manifest (creates Deployment, SA, RBAC).
+kubectl apply \
+  --server-side \
+  --force-conflicts \
+  -n "${ARGOCD_NAMESPACE}" \
+  -f "${IMAGE_UPDATER_INSTALL_URL}"
+
+# Apply our overlay: annotates the Image Updater SA with the GCP SA for WIF,
+# and writes the registries.conf ConfigMap with provider: google.
+kubectl apply \
+  --server-side \
+  --force-conflicts \
+  -n "${ARGOCD_NAMESPACE}" \
+  -f "${IMAGE_UPDATER_FILE}"
+
+# Restart so the pod picks up the new SA annotation and registry config.
+kubectl rollout restart deployment/argocd-image-updater -n "${ARGOCD_NAMESPACE}"
+kubectl rollout status deployment/argocd-image-updater -n "${ARGOCD_NAMESPACE}" --timeout=120s \
+  || die "argocd-image-updater did not restart cleanly. Check: kubectl get pods -n ${ARGOCD_NAMESPACE}"
+
+info "Image Updater installed and configured with WIF for GAR."
+
+# ── Step 7: Apply the platform App of Apps ──────────────────────────────────────
 # This is the only manual apply ever needed. After this, ArgoCD watches
 # argocd/ in this repo and self-updates: any push to main (applicationset.yaml,
 # chart-config.yaml, platform-app.yaml) is automatically synced to the cluster.
-info "Step 6/6 — Applying platform App of Apps (hippo-platform)..."
+info "Step 7/7 — Applying platform App of Apps (hippo-platform)..."
 kubectl apply \
   --server-side \
   --force-conflicts \
@@ -126,7 +155,7 @@ info "hippo-platform Application applied. ArgoCD will now self-manage the argocd
 # ── Summary ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN} ArgoCD setup complete${NC}"
+echo -e "${GREEN} ArgoCD setup complete (with Image Updater + WIF for GAR)${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo "Verify:"
