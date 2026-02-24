@@ -70,12 +70,20 @@ spec:
               mv /tmp/docker-credential-gcr /custom/bin/docker-credential-gcr
               chmod +x /custom/bin/docker-credential-gcr
 
-              # Write Docker config routing GAR auth through the credential helper
+              # ArgoCD v3 sets HELM_CONFIG_HOME=/helm-working-dir, so Helm reads
+              # registry auth from /helm-working-dir/registry/config.json — NOT
+              # from DOCKER_CONFIG. Write credHelpers to both locations so both
+              # the Docker client and Helm's OCI client find the credential helper.
+              CRED_HELPER='{"credHelpers":{"us-central1-docker.pkg.dev":"gcr"}}'
+
               mkdir -p /home/argocd/.docker
-              echo '{"credHelpers":{"us-central1-docker.pkg.dev":"gcr"}}' \
-                > /home/argocd/.docker/config.json
+              echo "$CRED_HELPER" > /home/argocd/.docker/config.json
+
+              mkdir -p /helm-working-dir/registry
+              echo "$CRED_HELPER" > /helm-working-dir/registry/config.json
+
               # argocd runs as uid 999
-              chown -R 999:999 /home/argocd/.docker
+              chown -R 999:999 /home/argocd/.docker /helm-working-dir
           securityContext:
             runAsUser: 0
           volumeMounts:
@@ -83,6 +91,8 @@ spec:
               mountPath: /custom/bin
             - name: docker-config
               mountPath: /home/argocd/.docker
+            - name: helm-working-dir
+              mountPath: /helm-working-dir
 
       containers:
         - name: argocd-repo-server
@@ -90,7 +100,7 @@ spec:
             # Add /custom/bin to PATH so docker-credential-gcr is found by Helm
             - name: PATH
               value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/custom/bin"
-            # Tell Docker/Helm where the config.json lives
+            # Tell Docker client where the config.json lives
             - name: DOCKER_CONFIG
               value: "/home/argocd/.docker"
             # Required for Helm OCI support
@@ -101,11 +111,15 @@ spec:
               mountPath: /custom/bin
             - name: docker-config
               mountPath: /home/argocd/.docker
+            - name: helm-working-dir
+              mountPath: /helm-working-dir
 
       volumes:
         - name: docker-credential-gcr
           emptyDir: {}
         - name: docker-config
+          emptyDir: {}
+        - name: helm-working-dir
           emptyDir: {}
 
 ---

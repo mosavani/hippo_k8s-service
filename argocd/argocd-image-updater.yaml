@@ -1,0 +1,66 @@
+# argocd/argocd-image-updater.yaml
+#
+# Installs ArgoCD Image Updater and configures it to pull image metadata from
+# Google Artifact Registry using Workload Identity — no static credentials.
+#
+# Why this is needed:
+#   Image Updater polls GAR to detect new image tags and writes the updated tag
+#   back to Git (write-back: git). Without WIF, it needs a long-lived service
+#   account key, which defeats the secret-sprawl goals of this platform.
+#
+# How it works:
+#   1. Image Updater's K8s SA is annotated with the GCP SA email.
+#   2. GKE WIF binds the K8s SA → GCP SA (hippo-dev-cluster-image-updater).
+#   3. The registry config uses `provider: google`, which invokes the built-in
+#      ADC credential chain to exchange the ambient WIF token for a short-lived
+#      GAR access token on every image check. No credentials key is needed.
+#   4. No Secrets, no token rotation — the metadata server handles it.
+#
+# The GCP SA and WIF binding must be declared in:
+#   hippo_cloud/environments/dev/wif.yml → workloads[name=argocd-image-updater]
+# Run `make apply-dev` in hippo_cloud after any wif.yml changes.
+#
+# Applied by: scripts/setup-argocd.sh (step 6, before platform-app.yaml)
+
+---
+# 1. Annotate the Image Updater K8s SA so GKE WIF binds it to the GCP SA.
+#    The upstream install.yaml (applied first by setup-argocd.sh step 6) creates
+#    this ServiceAccount. This document patches in the WIF annotation only.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-image-updater
+  namespace: argocd
+  annotations:
+    # GCP SA is created by Terraform from hippo_cloud/environments/dev/wif.yml
+    # entry name: image-updater → account_id truncated to 30 chars by the module.
+    # WIF binding: serviceAccount:PROJECT_ID.svc.id.goog[argocd/argocd-image-updater]
+    #   → serviceAccount:hippo-dev-cluster-image-updat@PROJECT_ID.iam.gserviceaccount.com
+    iam.gke.io/gcp-service-account: hippo-dev-cluster-image-updat@project-ec2467ed-84cd-4898-b5b.iam.gserviceaccount.com
+
+---
+# 2. Registry configuration for Image Updater.
+#    provider: google tells Image Updater to use the Application Default Credentials
+#    (ADC) credential chain — on GKE with WIF this resolves to the metadata server,
+#    returning a fresh short-lived token on every image check cycle.
+#
+#    This replaces the docker-credential-gcr approach used by argocd-repo-server
+#    because Image Updater has native ADC support via its built-in google provider.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-image-updater-config
+  namespace: argocd
+data:
+  # log.level: debug  # Uncomment to diagnose auth failures
+  registries.conf: |
+    registries:
+      - name: Google Artifact Registry
+        api_url: https://us-central1-docker.pkg.dev
+        prefix: us-central1-docker.pkg.dev
+        ping: yes
+        # provider: google uses Application Default Credentials (ADC).
+        # On GKE with WIF the ADC chain resolves via the metadata server using
+        # the identity bound to the argocd-image-updater K8s SA above.
+        # Do NOT add a `credentials:` key — provider: google handles auth internally.
+        provider: google
