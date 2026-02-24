@@ -99,10 +99,23 @@ helm upgrade --install external-secrets external-secrets/external-secrets \
   --namespace external-secrets \
   --create-namespace \
   --set installCRDs=true \
+  --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"=hippo-dev-cluster-eso@project-ec2467ed-84cd-4898-b5b.iam.gserviceaccount.com \
   --wait \
   --timeout 3m
 
+info "Waiting for ESO CRDs to be established..."
+for crd in clustersecretstores.external-secrets.io externalsecrets.external-secrets.io secretstores.external-secrets.io; do
+  kubectl wait --for=condition=Established --timeout=60s crd/"${crd}" \
+    || die "CRD ${crd} did not become Established within 60s."
+done
+
 info "ESO installed. Applying ClusterSecretStore and ExternalSecret..."
+
+# Invalidate kubectl's discovery cache so it picks up the newly registered ESO API groups.
+# Without this, kubectl apply can fail with "no matches for kind ClusterSecretStore"
+# even after the CRDs are Established, because the local cache is stale.
+sleep 5
+kubectl api-resources --api-group=external-secrets.io > /dev/null 2>&1 || true
 
 # ClusterSecretStore: tells ESO to use WIF to access GCP Secret Manager
 kubectl apply \
@@ -110,6 +123,8 @@ kubectl apply \
   --force-conflicts \
   -f "${ESO_FILE}"
 
+sleep 5
+info "Applying ExternalSecret..."
 # ExternalSecret: syncs the SA key JSON into argocd-gar-repo-creds
 kubectl apply \
   --server-side \
