@@ -12,10 +12,10 @@ Chart name — uses componentName if set, otherwise release name.
 {{- end }}
 
 {{/*
-Fully qualified resource name.
+Fully qualified resource name — svc-{componentName}.
 */}}
 {{- define "hippo.fullname" -}}
-{{- printf "%s-%s" .Release.Name (.Values.global.componentName | default .Release.Name) | trunc 63 | trimSuffix "-" }}
+{{- printf "svc-%s" (.Values.global.componentName | default .Release.Name) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
