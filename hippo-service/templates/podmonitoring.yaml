@@ -1,0 +1,32 @@
+{{/*
+podmonitoring.yaml — GKE Managed Prometheus PodMonitoring resource.
+
+Instructs the gmp-system collector to scrape this service's pods at
+metrics.path on the interval defined in values. Scraped metrics appear
+in GCP Monitoring → Metrics Explorer under prometheus.googleapis.com/*.
+
+Requires:
+  - GKE Managed Prometheus enabled on the cluster (gmp-system namespace)
+  - The app exposes Prometheus-format metrics at metrics.path
+
+Disable per-service with:
+  metrics:
+    enabled: false
+*/}}
+{{- if .Values.metrics.enabled }}
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "hippo.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "hippo.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: {{ .Values.metrics.port }}
+      path: {{ .Values.metrics.path }}
+      interval: {{ .Values.metrics.interval }}
+{{- end }}

@@ -139,6 +139,19 @@ podLabels: {}
 deploymentAnnotations: {}
 
 # ---------------------------------------------------------------------------
+# Metrics (GKE Managed Prometheus / PodMonitoring)
+# ---------------------------------------------------------------------------
+metrics:
+  # Enables a PodMonitoring resource so GKE Managed Prometheus scrapes /metrics.
+  # Requires the gmp-system collector to be running on the cluster (enabled by
+  # default on GKE clusters with Managed Prometheus). Scraped metrics are
+  # available in GCP Monitoring → Metrics Explorer under prometheus.googleapis.com.
+  enabled: true
+  path: /metrics
+  port: http          # must match the Service port name
+  interval: 30s
+
+# ---------------------------------------------------------------------------
 # Argo Rollouts (canary deployments)
 # ---------------------------------------------------------------------------
 # Set rollout.enabled: true to replace the Deployment with an Argo Rollout.
