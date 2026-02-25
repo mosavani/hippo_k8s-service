@@ -46,7 +46,7 @@ spec:
               elements:
                 - env: dev
                   server: https://kubernetes.default.svc
-                  chart_version: "0.0.6"
+                  chart_version: "0.0.7"
                   gar_location: "us-central1"
                   gar_project_id: "project-ec2467ed-84cd-4898-b5b"
                   gar_repository: "hippo-helm-charts"
