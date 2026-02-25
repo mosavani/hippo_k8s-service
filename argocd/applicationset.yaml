@@ -91,7 +91,7 @@ spec:
 
       destination:
         server: "{{server}}"
-        namespace: "hippo-{{app_name}}-{{env}}"
+        namespace: "svc-{{app_name}}"
 
       syncPolicy:
         automated:
