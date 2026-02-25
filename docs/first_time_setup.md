@@ -105,7 +105,7 @@ kubectl get externalsecret argocd-gar-repo-creds -n argocd
 ### Accessing the ArgoCD UI
 
 ```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
+kubectl port-forward svc/argocd-server -n argocd 8080:8080
 ```
 
 Open: **https://localhost:8080** (accept the self-signed cert warning)
