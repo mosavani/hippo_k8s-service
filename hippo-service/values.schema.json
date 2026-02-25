@@ -130,7 +130,7 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "path": { "type": "string" },
-        "port": { "type": "string" },
+        "port": {},
         "interval": { "type": "string" }
       }
     },

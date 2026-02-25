@@ -26,7 +26,7 @@ spec:
     matchLabels:
       {{- include "hippo.selectorLabels" . | nindent 6 }}
   endpoints:
-    - port: {{ .Values.metrics.port }}
+    - port: {{ .Values.metrics.port | toString }}
       path: {{ .Values.metrics.path }}
       interval: {{ .Values.metrics.interval }}
 {{- end }}
