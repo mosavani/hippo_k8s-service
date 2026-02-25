@@ -51,10 +51,6 @@ spec:
                   gar_project_id: "project-ec2467ed-84cd-4898-b5b"
                   gar_repository: "hippo-helm-charts"
                   gar_image_repository: "hippo-images"
-                  autoSync: |
-                    automated:
-                      prune: true
-                      selfHeal: true
 
   template:
     metadata:
@@ -98,6 +94,9 @@ spec:
         namespace: "hippo-{{app_name}}-{{env}}"
 
       syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
@@ -107,12 +106,6 @@ spec:
             duration: 5s
             factor: 2
             maxDuration: 3m
-
-  # Splice per-environment automated sync block into syncPolicy.
-  templatePatch: |
-    spec:
-      syncPolicy:
-        {{autoSync}}
 
   syncPolicy:
     preserveResourcesOnDeletion: true
