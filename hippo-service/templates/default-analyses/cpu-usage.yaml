@@ -44,8 +44,8 @@ spec:
       provider:
         prometheus:
           # GMP Prometheus-compatible frontend — available on all GKE clusters
-          # with Managed Prometheus enabled (gmp-system namespace).
-          address: http://frontend.gmp-system.svc.cluster.local:9090
+          # with Managed Prometheus enabled (frontend deployed to gmp-public).
+          address: http://frontend.gmp-public.svc.cluster.local:9090
           query: |
             100 * avg(
               rate(
