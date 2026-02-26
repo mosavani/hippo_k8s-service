@@ -6,13 +6,15 @@ _hippo.rollout.tpl — Argo Rollouts canary helpers
 
 {{/*
 hippo.rollout.enabled — returns true when rollout is enabled.
-Accepts both boolean true and string "true" so that ArgoCD ApplicationSet
-inline values (which always render as strings) work alongside direct boolean
-values in service-settings values files.
+Accepts:
+  - boolean true
+  - string "true"
+  - string "progressive" (injected by ArgoCD ApplicationSet via {{deployment_type}})
 Usage: {{- if include "hippo.rollout.enabled" . }}
 */}}
 {{- define "hippo.rollout.enabled" -}}
-{{- if eq (.Values.rollout.enabled | toString) "true" -}}
+{{- $v := .Values.rollout.enabled | toString -}}
+{{- if or (eq $v "true") (eq $v "progressive") -}}
 true
 {{- end -}}
 {{- end -}}

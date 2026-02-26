@@ -85,7 +85,7 @@ spec:
                 repository: {{gar_location}}-docker.pkg.dev/{{gar_project_id}}/{{gar_image_repository}}/{{app_name}}
                 tag: {{image_tag}}
               rollout:
-                enabled: '{{eq deployment_type "progressive"}}'
+                enabled: '{{deployment_type}}'
 
         # Service git repo — supplies values files via $values ref
         - repoURL: "{{repo_url}}"

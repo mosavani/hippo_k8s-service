@@ -1,9 +1,10 @@
 # tests/values/rollout-canary-argocd.yml
 # Simulates the ArgoCD ApplicationSet inline values injection path where
 # deployment_type=progressive in components-manifest.yml causes ArgoCD to
-# render rollout.enabled as the string "true" (not boolean true).
-# This test guards against the type comparison error:
-#   eq .Values.rollout.enabled true: incompatible types for comparison
+# inject rollout.enabled as the string "progressive" via:
+#   enabled: '{{deployment_type}}'
+# This test guards against the type comparison error and ensures
+# "progressive" is treated identically to boolean true for rollout activation.
 image:
   repository: gcr.io/my-project/hippo-api
   tag: "2.1.0"
@@ -23,10 +24,10 @@ service:
     enabled: true
     path: /ready
 
-# rollout.enabled as string "true" — exactly what ArgoCD injects via:
-#   enabled: '{{eq deployment_type "progressive"}}'
+# rollout.enabled as string "progressive" — exactly what ArgoCD injects via:
+#   enabled: '{{deployment_type}}'
 rollout:
-  enabled: "true"
+  enabled: "progressive"
   autoPromote: "false"
   maxSurge: 25
   maxUnavailable: 0
