@@ -30,7 +30,8 @@ spec:
           # Generator 1: per-service manifest.
           # Each registered service repo contributes one file.
           # Keys available in template: app_name, repo_url, target_revision,
-          #                             image_tag, default_values, prod_values
+          #                             image_tag, default_values, prod_values,
+          #                             deployment_type (rolling | progressive)
           - git:
               repoURL: https://github.com/mosavani/hippo_hello_world.git
               revision: HEAD
@@ -83,6 +84,8 @@ spec:
               image:
                 repository: {{gar_location}}-docker.pkg.dev/{{gar_project_id}}/{{gar_image_repository}}/{{app_name}}
                 tag: {{image_tag}}
+              rollout:
+                enabled: '{{eq deployment_type "progressive"}}'
 
         # Service git repo — supplies values files via $values ref
         - repoURL: "{{repo_url}}"
