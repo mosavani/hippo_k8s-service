@@ -105,7 +105,7 @@ spec:
       stableMetadata:
         labels:
           rollout-role: stable
-      {{- if not (or (eq .Values.rollout.autoPromote true) (eq (.Values.rollout.autoPromote | toString) "true")) }}
+      {{- if not (eq (.Values.rollout.autoPromote | toString) "true") }}
       steps:
         {{- include "hippo.rollout.steps" . | nindent 8 }}
       {{- end }}
