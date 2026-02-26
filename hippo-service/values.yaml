@@ -176,14 +176,54 @@ rollout:
   progressDeadlineSeconds: 600
   progressDeadlineAbort: true
 
+  # ---------------------------------------------------------------------------
+  # Analysis — automated health checks injected after every setWeight step.
+  #
+  # When a threshold is set, an AnalysisTemplate is created in the namespace
+  # and an `analysis` step is automatically injected after every `setWeight`
+  # in the steps list below. If the metric breaches the threshold the rollout
+  # is aborted and the stable version receives all traffic.
+  #
+  # Metrics are queried from the GMP Prometheus frontend (gmp-system/frontend)
+  # which exposes app metrics scraped via PodMonitoring — no extra Prometheus
+  # installation required. Raw container CPU/memory (cAdvisor) metrics require
+  # an in-cluster Prometheus (kube-prometheus-stack) — see docs/architecture.md.
+  #
+  # Set threshold to "" (empty string) or omit the key to disable that check.
+  # ---------------------------------------------------------------------------
+  analysis:
+    # CPU utilisation of canary pods as % of their CPU request (0–100).
+    # Rollout aborts if average canary CPU exceeds this value.
+    # Metric: container_cpu_usage_seconds_total / kubernetes.io/container/cpu/request_cores
+    # Queried from Cloud Monitoring via GMP frontend (gmp-system/frontend:9090).
+    defaultCpuUsage:
+      threshold: 70
+
+    # Memory working-set of canary pods as % of their memory request (0–100).
+    # Rollout aborts if average canary memory exceeds this value.
+    # Metric: container_memory_working_set_bytes / kubernetes.io/container/memory/request_bytes
+    # Omit threshold to disable.
+    defaultMemoryUtilization:
+      threshold: 80
+
   # Canary steps — executed in order.
   # Supported step types: setWeight | pause | analysis
+  # If rollout.analysis thresholds are set, an `analysis` step is automatically
+  # injected after every setWeight — no need to add them manually.
   # Leave empty [] when autoPromote: true.
   steps:
-    - setWeight: 20
+    - setWeight: 10
     - pause:
-        duration: 60s
+        duration: 2m
+    - setWeight: 25
+    - pause:
+        duration: 2m
     - setWeight: 50
     - pause:
-        duration: 120s
+        duration: 3m
+    - setWeight: 75
+    - pause:
+        duration: 3m
     - setWeight: 100
+    - pause:
+        duration: 2m

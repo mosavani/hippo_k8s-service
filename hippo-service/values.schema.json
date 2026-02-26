@@ -143,7 +143,24 @@
         "maxUnavailable": { "type": "integer", "minimum": 0, "maximum": 100 },
         "progressDeadlineSeconds": { "type": "integer", "minimum": 0 },
         "progressDeadlineAbort": { "type": "boolean" },
-        "steps": { "type": "array" }
+        "steps": { "type": "array" },
+        "analysis": {
+          "type": "object",
+          "properties": {
+            "defaultCpuUsage": {
+              "type": "object",
+              "properties": {
+                "threshold": {}
+              }
+            },
+            "defaultMemoryUtilization": {
+              "type": "object",
+              "properties": {
+                "threshold": {}
+              }
+            }
+          }
+        }
       }
     }
   }

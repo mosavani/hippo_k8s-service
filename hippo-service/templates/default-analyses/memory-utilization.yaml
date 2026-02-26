@@ -1,0 +1,61 @@
+{{/*
+default-analyses/memory-utilization.yaml
+
+AnalysisTemplate: memory-utilization
+
+Queries Cloud Monitoring via the GMP Prometheus-compatible frontend for the average
+memory working-set utilisation of canary pods as a percentage of their memory request.
+
+Metric: container_memory_working_set_bytes
+  - Type: GAUGE — avg() directly, rate() must NOT be used (Monarch is strongly typed)
+  - Collected by: gmp-system node collector (cAdvisor scrape)
+  - Working-set memory is what the OOM killer uses and what kubectl top reports.
+    It is more meaningful than RSS for eviction decisions.
+  - PromQL format: UTF-8 braces syntax {"__name__"="...", label="value"}
+
+Metric: kubernetes.io/container/memory/request_bytes
+  - Type: GAUGE — avg() directly
+  - Used as denominator to express usage as % of request
+
+threshold: memory utilisation % of request (0–100). Rollout aborts if canary pods
+  average above this. Maps to rollout.analysis.defaultMemoryUtilization.threshold.
+
+Disable per-service with:
+  rollout:
+    analysis:
+      defaultMemoryUtilization: {}
+*/}}
+{{- if and .Values.rollout.enabled .Values.rollout.analysis.defaultMemoryUtilization.threshold }}
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ include "hippo.fullname" . }}-memory-utilization
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+spec:
+  metrics:
+    - name: memory-utilization
+      interval: 30s
+      successCondition: result[0] < {{ .Values.rollout.analysis.defaultMemoryUtilization.threshold }}
+      failureLimit: 0
+      count: 3
+      provider:
+        prometheus:
+          address: http://frontend.gmp-system.svc.cluster.local:9090
+          query: |
+            100 * avg(
+              {"__name__"="container_memory_working_set_bytes",
+                namespace="{{ .Release.Namespace }}",
+                container!="",
+                container!="POD",
+                pod=~"{{ include "hippo.fullname" . }}-.*"}
+            )
+            /
+            avg(
+              {"__name__"="kubernetes.io/container/memory/request_bytes",
+                namespace="{{ .Release.Namespace }}",
+                container!="",
+                pod=~"{{ include "hippo.fullname" . }}-.*"}
+            )
+{{- end }}

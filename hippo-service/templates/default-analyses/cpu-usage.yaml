@@ -1,0 +1,66 @@
+{{/*
+default-analyses/cpu-usage.yaml
+
+AnalysisTemplate: cpu-usage
+
+Queries Cloud Monitoring via the GMP Prometheus-compatible frontend for the average
+CPU utilisation of canary pods as a percentage of their CPU request.
+
+Metric: container_cpu_usage_seconds_total
+  - Type: COUNTER — rate() is valid
+  - Collected by: gmp-system node collector (cAdvisor scrape)
+  - PromQL format: UTF-8 braces syntax {"__name__"="...", label="value"}
+    per Cloud Monitoring PromQL UTF-8 spec. Label names are standard alphanumeric
+    so no quoting required on label keys, only on the metric name.
+
+Metric: kubernetes.io/container/cpu/request_cores
+  - Type: GAUGE — avg() directly, no rate()
+  - Used as denominator to express usage as % of request
+
+threshold: CPU utilisation % of request (0–100). Rollout aborts if canary pods
+  average above this. Maps to rollout.analysis.defaultCpuUsage.threshold.
+
+Disable per-service with:
+  rollout:
+    analysis:
+      defaultCpuUsage: {}
+*/}}
+{{- if and .Values.rollout.enabled .Values.rollout.analysis.defaultCpuUsage.threshold }}
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ include "hippo.fullname" . }}-cpu-usage
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hippo.labels" . | nindent 4 }}
+spec:
+  metrics:
+    - name: cpu-usage
+      # Evaluate every 30s, require 3 consecutive successes, abort on first breach.
+      interval: 30s
+      successCondition: result[0] < {{ .Values.rollout.analysis.defaultCpuUsage.threshold }}
+      failureLimit: 0
+      count: 3
+      provider:
+        prometheus:
+          # GMP Prometheus-compatible frontend — available on all GKE clusters
+          # with Managed Prometheus enabled (gmp-system namespace).
+          address: http://frontend.gmp-system.svc.cluster.local:9090
+          query: |
+            100 * avg(
+              rate(
+                {"__name__"="container_cpu_usage_seconds_total",
+                  namespace="{{ .Release.Namespace }}",
+                  container!="",
+                  container!="POD",
+                  pod=~"{{ include "hippo.fullname" . }}-.*"}[2m]
+              )
+            )
+            /
+            avg(
+              {"__name__"="kubernetes.io/container/cpu/request_cores",
+                namespace="{{ .Release.Namespace }}",
+                container!="",
+                pod=~"{{ include "hippo.fullname" . }}-.*"}
+            )
+{{- end }}
