@@ -42,7 +42,7 @@ spec:
       count: 3
       provider:
         prometheus:
-          address: http://frontend.gmp-system.svc.cluster.local:9090
+          address: http://frontend.gmp-public.svc.cluster.local:9090
           query: |
             100 * avg(
               {"__name__"="container_memory_working_set_bytes",
