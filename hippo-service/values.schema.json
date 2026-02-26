@@ -137,12 +137,12 @@
     "rollout": {
       "type": "object",
       "properties": {
-        "enabled": { "type": "boolean" },
-        "autoPromote": { "type": "boolean" },
+        "enabled": {},
+        "autoPromote": {},
         "maxSurge": { "type": "integer", "minimum": 0, "maximum": 130 },
         "maxUnavailable": { "type": "integer", "minimum": 0, "maximum": 100 },
         "progressDeadlineSeconds": { "type": "integer", "minimum": 0 },
-        "progressDeadlineAbort": { "type": "boolean" },
+        "progressDeadlineAbort": {},
         "steps": { "type": "array" },
         "analysis": {
           "type": "object",

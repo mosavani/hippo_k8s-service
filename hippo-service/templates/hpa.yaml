@@ -15,7 +15,7 @@ metadata:
     {{- include "hippo.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
-    {{- if .Values.rollout.enabled }}
+    {{- if include "hippo.rollout.enabled" . }}
     apiVersion: argoproj.io/v1alpha1
     kind: Rollout
     {{- else }}

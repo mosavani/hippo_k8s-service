@@ -25,7 +25,7 @@ Disable per-service with:
     analysis:
       defaultMemoryUtilization: {}
 */}}
-{{- if and .Values.rollout.enabled .Values.rollout.analysis.defaultMemoryUtilization.threshold }}
+{{- if and (include "hippo.rollout.enabled" .) .Values.rollout.analysis.defaultMemoryUtilization.threshold }}
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata:

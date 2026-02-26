@@ -25,7 +25,7 @@ Disable per-service with:
     analysis:
       defaultCpuUsage: {}
 */}}
-{{- if and .Values.rollout.enabled .Values.rollout.analysis.defaultCpuUsage.threshold }}
+{{- if and (include "hippo.rollout.enabled" .) .Values.rollout.analysis.defaultCpuUsage.threshold }}
 apiVersion: argoproj.io/v1alpha1
 kind: AnalysisTemplate
 metadata:

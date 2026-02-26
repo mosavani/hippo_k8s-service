@@ -5,6 +5,19 @@ _hippo.rollout.tpl — Argo Rollouts canary helpers
 */}}
 
 {{/*
+hippo.rollout.enabled — returns true when rollout is enabled.
+Accepts both boolean true and string "true" so that ArgoCD ApplicationSet
+inline values (which always render as strings) work alongside direct boolean
+values in service-settings values files.
+Usage: {{- if include "hippo.rollout.enabled" . }}
+*/}}
+{{- define "hippo.rollout.enabled" -}}
+{{- if or (eq .Values.rollout.enabled true) (eq (.Values.rollout.enabled | toString) "true") -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
 Render the analysis templates block for auto-injected analysis steps.
 Outputs the `templates:` list for any enabled default analysis checks.
 Usage: {{ include "hippo.rollout.analysisBlock" . }}

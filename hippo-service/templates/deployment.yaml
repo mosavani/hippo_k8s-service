@@ -2,7 +2,7 @@
 deployment.yaml — Kubernetes Deployment for Hippo services.
 Suppressed when rollout.enabled: true — the Rollout object takes its place.
 */}}
-{{- if not .Values.rollout.enabled }}
+{{- if not (include "hippo.rollout.enabled" .) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -9,7 +9,7 @@ Argo Rollouts requires two separate Services to do weighted traffic shifting:
 The Rollout controller manages the pod selectors on these Services automatically.
 Your Ingress (or service.yaml) should point at <name>-stable for normal traffic.
 */}}
-{{- if .Values.rollout.enabled }}
+{{- if include "hippo.rollout.enabled" . }}
 {{- range $type := list "stable" "canary" }}
 ---
 apiVersion: v1

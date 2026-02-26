@@ -19,7 +19,7 @@ Enable in your component values:
       - pause: { duration: 120s }
       - setWeight: 100
 */}}
-{{- if .Values.rollout.enabled }}
+{{- if include "hippo.rollout.enabled" . }}
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
@@ -105,7 +105,7 @@ spec:
       stableMetadata:
         labels:
           rollout-role: stable
-      {{- if not .Values.rollout.autoPromote }}
+      {{- if not (or (eq .Values.rollout.autoPromote true) (eq (.Values.rollout.autoPromote | toString) "true")) }}
       steps:
         {{- include "hippo.rollout.steps" . | nindent 8 }}
       {{- end }}
