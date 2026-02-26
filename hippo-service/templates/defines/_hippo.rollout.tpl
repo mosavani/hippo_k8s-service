@@ -12,7 +12,7 @@ values in service-settings values files.
 Usage: {{- if include "hippo.rollout.enabled" . }}
 */}}
 {{- define "hippo.rollout.enabled" -}}
-{{- if or (eq .Values.rollout.enabled true) (eq (.Values.rollout.enabled | toString) "true") -}}
+{{- if eq (.Values.rollout.enabled | toString) "true" -}}
 true
 {{- end -}}
 {{- end -}}
