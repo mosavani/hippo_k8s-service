@@ -1,0 +1,53 @@
+# GMP Prometheus-compatible frontend.
+#
+# Provides a /api/v1/query endpoint backed by Cloud Monitoring so that
+# Argo Rollouts AnalysisTemplates can run PromQL queries during canary rollouts.
+#
+# The frontend image is pinned from the cluster's config-images ConfigMap.
+# Update the image tag when GKE upgrades the Managed Prometheus version:
+#   kubectl get configmap config-images -n gmp-system -o jsonpath='{.data.frontend}'
+#
+# Auth: runs as gmp-frontend KSA which is bound via Workload Identity to
+#   hippo-dev-cluster-gmp-frontend@... GSA (roles/monitoring.viewer).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: gmp-public
+  labels:
+    app: frontend
+    app.kubernetes.io/managed-by: argocd
+    app.kubernetes.io/component: gmp-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        app.kubernetes.io/component: gmp-frontend
+    spec:
+      serviceAccountName: gmp-frontend
+      containers:
+        - name: frontend
+          image: us-central1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/frontend:v0.17.3-gke.0@sha256:de7150a810fa277fb308645a7967b56ce6fbf06cce647ed2aa7c9a8dd3954680
+          args:
+            - "--web.listen-address=:9090"
+            - "--query.project-id=project-ec2467ed-84cd-4898-b5b"
+          ports:
+            - name: web
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: web
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
