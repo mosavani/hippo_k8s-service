@@ -3,19 +3,12 @@ default-analyses/memory-utilization.yaml
 
 AnalysisTemplate: memory-utilization
 
-Queries Cloud Monitoring via the GMP Prometheus-compatible frontend for the average
-memory working-set utilisation of canary pods as a percentage of their memory request.
+Queries Cloud Monitoring via the GMP Prometheus-compatible frontend.
 
-Metric: container_memory_working_set_bytes
-  - Type: GAUGE — avg() directly, rate() must NOT be used (Monarch is strongly typed)
-  - Collected by: gmp-system node collector (cAdvisor scrape)
-  - Working-set memory is what the OOM killer uses and what kubectl top reports.
-    It is more meaningful than RSS for eviction decisions.
-  - PromQL format: UTF-8 braces syntax {"__name__"="...", label="value"}
-
-Metric: kubernetes.io/container/memory/request_bytes
-  - Type: GAUGE — avg() directly
-  - Used as denominator to express usage as % of request
+Metric: kubernetes_io:container_memory_request_utilization
+  - Pre-computed GAUGE: memory used / memory request (0.0 = 0%, 1.0 = 100%)
+  - Label names use Cloud Monitoring convention: namespace_name, container_name, pod_name
+  - avg() across matching pods — no avg_over_time needed (GMP handles windowing)
 
 threshold: memory utilisation % of request (0–100). Rollout aborts if canary pods
   average above this. Maps to rollout.analysis.defaultMemoryUtilization.threshold.
@@ -45,17 +38,12 @@ spec:
           address: http://frontend.gmp-public.svc.cluster.local:9090
           query: |
             100 * avg(
-              {"__name__"="container_memory_working_set_bytes",
-                namespace="{{ .Release.Namespace }}",
-                container!="",
-                container!="POD",
-                pod=~"{{ include "hippo.fullname" . }}-.*"}
-            )
-            /
-            avg(
-              {"__name__"="kubernetes.io/container/memory/request_bytes",
-                namespace="{{ .Release.Namespace }}",
-                container!="",
-                pod=~"{{ include "hippo.fullname" . }}-.*"}
+              kubernetes_io:container_memory_request_utilization{
+                monitored_resource="k8s_container",
+                cluster_name="{{ .Values.global.clusterName }}",
+                namespace_name="{{ .Release.Namespace }}",
+                container_name="{{ include "hippo.name" . }}",
+                pod_name=~"{{ include "hippo.fullname" . }}-.*"
+              }
             )
 {{- end }}

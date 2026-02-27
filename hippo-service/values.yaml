@@ -12,6 +12,7 @@
 global:
   env: dev
   componentName: ""
+  clusterName: ""
   # Pipeline can force a specific replica count (0 = use service.replicaCount)
   replicaCountOverride: 0
 

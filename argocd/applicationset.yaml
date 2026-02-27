@@ -47,6 +47,7 @@ spec:
               elements:
                 - env: dev
                   server: https://kubernetes.default.svc
+                  cluster_name: "hippo-dev-cluster"
                   chart_version: "0.0.17"
                   gar_location: "us-central1"
                   gar_project_id: "project-ec2467ed-84cd-4898-b5b"
@@ -81,6 +82,7 @@ spec:
               global:
                 env: {{env}}
                 componentName: {{app_name}}
+                clusterName: {{cluster_name}}
               image:
                 repository: {{gar_location}}-docker.pkg.dev/{{gar_project_id}}/{{gar_image_repository}}/{{app_name}}
                 tag: {{image_tag}}
