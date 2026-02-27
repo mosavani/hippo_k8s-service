@@ -56,15 +56,15 @@ Usage: {{ include "hippo.rollout.steps" . }}
 {{- range .Values.rollout.steps }}
 {{- if hasKey . "setWeight" }}
 - setWeight: {{ .setWeight }}
-{{- if $hasAnalysis }}
-{{ include "hippo.rollout.analysisBlock" $ }}
-{{- end }}
 {{- else if hasKey . "pause" }}
 - pause:
   {{- if .pause.duration }}
     duration: {{ .pause.duration }}
   {{- else }} {}
   {{- end }}
+{{- if $hasAnalysis }}
+{{ include "hippo.rollout.analysisBlock" $ }}
+{{- end }}
 {{- else if hasKey . "analysis" }}
 - analysis:
     templates:
