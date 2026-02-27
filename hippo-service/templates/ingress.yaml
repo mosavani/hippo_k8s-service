@@ -4,6 +4,9 @@ ingress.yaml — GKE Ingress (HTTP(S) LoadBalancer).
 Enabled via ingress.enabled: true.
 Use ingress.className: "gce" for external, "gce-internal" for internal.
 
+The kubernetes.io/ingress.class annotation is used instead of ingressClassName
+because GKE clusters may not have IngressClass CRD resources installed.
+
 Common GKE annotations:
   kubernetes.io/ingress.allow-http: "false"
   networking.gke.io/managed-certificates: <cert-name>
@@ -17,20 +20,22 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "hippo.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
   annotations:
+    {{- if .Values.ingress.className }}
+    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
-  {{- if .Values.ingress.className }}
-  ingressClassName: {{ .Values.ingress.className }}
-  {{- end }}
   {{- if .Values.ingress.tls }}
   tls:
     {{- toYaml .Values.ingress.tls | nindent 4 }}
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    - {{- if .Values.ingress.host }}
+      host: {{ .Values.ingress.host | quote }}
+      {{- end }}
       http:
         paths:
           - path: {{ .Values.ingress.path | default "/" }}
