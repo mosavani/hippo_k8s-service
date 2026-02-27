@@ -1,0 +1,19 @@
+# ClusterIP service for the GMP frontend.
+# Argo Rollouts AnalysisTemplates query:
+#   http://frontend.gmp-public.svc.cluster.local:9090/api/v1/query
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: gmp-public
+  labels:
+    app: frontend
+    app.kubernetes.io/managed-by: argocd
+    app.kubernetes.io/component: gmp-frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - name: web
+      port: 9090
+      targetPort: web

@@ -1,0 +1,39 @@
+# argocd/gmp-frontend.yaml
+#
+# ArgoCD Application — GMP Prometheus-compatible frontend.
+#
+# Deploys the GMP frontend to gmp-public namespace so Argo Rollouts
+# AnalysisTemplates can query Cloud Monitoring metrics during canary rollouts:
+#   http://frontend.gmp-public.svc.cluster.local:9090/api/v1/query
+#
+# Prerequisites (managed by Terraform via hippo_cloud wif.yml):
+#   - GSA: hippo-dev-cluster-gmp-frontend@... with roles/monitoring.viewer
+#   - WI binding: gmp-public/gmp-frontend KSA -> GSA
+#
+# Managed by hippo-platform App of Apps — do not apply manually.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gmp-frontend
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/mosavani/hippo_k8s-service.git
+    targetRevision: main
+    path: platform/gmp-frontend
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gmp-public
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
