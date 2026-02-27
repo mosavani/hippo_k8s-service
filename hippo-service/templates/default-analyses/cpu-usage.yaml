@@ -38,6 +38,8 @@ spec:
       successCondition: result[0] < {{ .Values.rollout.analysis.defaultCpuUsage.threshold }}
       failureLimit: 0
       count: 3
+      # Return 0 if no canary pods are emitting metrics yet (avoids slice index panic).
+      defaultValue: 0
       provider:
         prometheus:
           address: http://frontend.gmp-public.svc.cluster.local:9090
