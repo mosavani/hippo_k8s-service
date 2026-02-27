@@ -98,6 +98,25 @@ spec:
         server: "{{server}}"
         namespace: "svc-{{app_name}}"
 
+      # Ignore selector/clusterIP fields on stable/canary services — Argo Rollouts
+      # mutates these during canary rollouts and ArgoCD would otherwise see them
+      # as perpetual drift and try to overwrite Rollouts' changes.
+      ignoreDifferences:
+        - group: ""
+          kind: Service
+          name: "svc-{{app_name}}-stable"
+          jsonPointers:
+            - /spec/selector
+            - /spec/clusterIP
+            - /spec/clusterIPs
+        - group: ""
+          kind: Service
+          name: "svc-{{app_name}}-canary"
+          jsonPointers:
+            - /spec/selector
+            - /spec/clusterIP
+            - /spec/clusterIPs
+
       syncPolicy:
         automated:
           prune: true
