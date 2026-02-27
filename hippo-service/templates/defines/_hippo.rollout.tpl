@@ -33,6 +33,10 @@ Usage: {{ include "hippo.rollout.analysisBlock" . }}
 {{- if .Values.rollout.analysis.defaultMemoryUtilization.threshold }}
       - templateName: {{ printf "%s-memory-utilization" (include "hippo.fullname" .) | quote }}
 {{- end }}
+    args:
+      - name: canary-hash
+        valueFrom:
+          podTemplateHashValue: Latest
 {{- end -}}
 
 {{/*

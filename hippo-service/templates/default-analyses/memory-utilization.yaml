@@ -8,7 +8,10 @@ Queries Cloud Monitoring via the GMP Prometheus-compatible frontend.
 Metric: kubernetes_io:container_memory_request_utilization
   - Pre-computed GAUGE: memory used / memory request (0.0 = 0%, 1.0 = 100%)
   - Label names use Cloud Monitoring convention: namespace_name, container_name, pod_name
-  - avg() across matching pods — no avg_over_time needed (GMP handles windowing)
+
+Canary scoping: Argo Rollouts injects the canary ReplicaSet pod-template-hash via
+  args.canary-hash so the query measures only canary pods, not stable pods.
+  pod_name=~"<fullname>-<hash>-.*" matches only the canary ReplicaSet pods.
 
 threshold: memory utilisation % of request (0–100). Rollout aborts if canary pods
   average above this. Maps to rollout.analysis.defaultMemoryUtilization.threshold.
@@ -27,6 +30,8 @@ metadata:
   labels:
     {{- include "hippo.labels" . | nindent 4 }}
 spec:
+  args:
+    - name: canary-hash
   metrics:
     - name: memory-utilization
       interval: 30s
@@ -43,7 +48,7 @@ spec:
                 cluster_name="{{ .Values.global.clusterName }}",
                 namespace_name="{{ .Release.Namespace }}",
                 container_name="{{ include "hippo.name" . }}",
-                pod_name=~"{{ include "hippo.fullname" . }}-.*"
+                pod_name=~"{{ include "hippo.fullname" . }}-{{`{{args.canary-hash}}`}}-.*"
               }
             )
 {{- end }}
