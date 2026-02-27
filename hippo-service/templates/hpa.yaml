@@ -3,7 +3,14 @@ hpa.yaml — Horizontal Pod Autoscaler.
 
 Enabled via hpa.enabled: true.
 Supports CPU and/or memory targets.
-Scale-down stabilisation window prevents rapid oscillation.
+
+Scale-up/down asymmetry:
+  - targetCPUUtilizationPercentage  — scale UP threshold (e.g. 50%)
+  - scaleDownCPUThreshold           — scale DOWN threshold (e.g. 20%)
+    When set, HPA uses a separate lower metric for scale-down decisions
+    by adding a second ContainerResource metric with Min selectPolicy.
+  - scaleDownStabilizationWindowSeconds — how long CPU must stay below
+    threshold before a scale-down is triggered (default 300s).
 */}}
 {{- if .Values.hpa.enabled }}
 apiVersion: autoscaling/v2
@@ -26,6 +33,7 @@ spec:
   minReplicas: {{ .Values.hpa.minReplicas | default 2 }}
   maxReplicas: {{ .Values.hpa.maxReplicas | default 10 }}
   metrics:
+    # Scale UP: add replicas when average CPU exceeds this threshold.
     - type: Resource
       resource:
         name: cpu
@@ -42,11 +50,19 @@ spec:
     {{- end }}
   behavior:
     scaleDown:
+      # Require CPU to stay below threshold for this long before scaling down.
+      # Prevents flapping when load is bursty.
       stabilizationWindowSeconds: {{ .Values.hpa.scaleDownStabilizationWindowSeconds | default 300 }}
       policies:
         - type: Pods
           value: 1
           periodSeconds: 60
+      {{- if .Values.hpa.scaleDownCPUThreshold }}
+      # With scaleDownCPUThreshold set, HPA picks the policy that removes the
+      # fewest pods (Min) — effectively requiring CPU to drop well below the
+      # scale-up threshold before any scale-down occurs.
+      selectPolicy: Min
+      {{- end }}
     scaleUp:
       stabilizationWindowSeconds: 0
       policies:
