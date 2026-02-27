@@ -35,11 +35,10 @@ spec:
   metrics:
     - name: cpu-usage
       interval: 30s
-      successCondition: result[0] < {{ .Values.rollout.analysis.defaultCpuUsage.threshold }}
+      # len(result)==0: no canary pods emitting metrics yet — treat as passing.
+      successCondition: "len(result) == 0 || result[0] < {{ .Values.rollout.analysis.defaultCpuUsage.threshold }}"
       failureLimit: 0
       count: 3
-      # Return 0 if no canary pods are emitting metrics yet (avoids slice index panic).
-      defaultValue: 0
       provider:
         prometheus:
           address: http://frontend.gmp-public.svc.cluster.local:9090
