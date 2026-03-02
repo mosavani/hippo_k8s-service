@@ -7,8 +7,12 @@ Supports CPU and/or memory targets.
 Scale-up/down asymmetry:
   - targetCPUUtilizationPercentage  — scale UP threshold (e.g. 50%)
   - scaleDownCPUThreshold           — scale DOWN threshold (e.g. 20%)
-    When set, HPA uses a separate lower metric for scale-down decisions
-    by adding a second ContainerResource metric with Min selectPolicy.
+    When set, a second Resource metric is added at the lower threshold.
+    HPA evaluates both metrics and picks the one recommending the MOST
+    replicas (Max selectPolicy on metrics). For scale-down, selectPolicy: Min
+    on the behavior policies means the most conservative removal rate wins.
+    Net effect: HPA will not scale down unless CPU drops below BOTH thresholds,
+    i.e. it must fall to scaleDownCPUThreshold before replicas are removed.
   - scaleDownStabilizationWindowSeconds — how long CPU must stay below
     threshold before a scale-down is triggered (default 300s).
 */}}
@@ -40,6 +44,18 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage | default 70 }}
+    {{- if .Values.hpa.scaleDownCPUThreshold }}
+    # Scale DOWN guard: a second CPU metric at the lower threshold.
+    # HPA takes the maximum replica count across all metrics, so it will
+    # not scale down until CPU drops below this lower value — even if it
+    # is already under the scale-up threshold above.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.scaleDownCPUThreshold }}
+    {{- end }}
     {{- if .Values.hpa.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
@@ -58,9 +74,7 @@ spec:
           value: 1
           periodSeconds: 60
       {{- if .Values.hpa.scaleDownCPUThreshold }}
-      # With scaleDownCPUThreshold set, HPA picks the policy that removes the
-      # fewest pods (Min) — effectively requiring CPU to drop well below the
-      # scale-up threshold before any scale-down occurs.
+      # Min: when multiple policies exist, remove the fewest pods.
       selectPolicy: Min
       {{- end }}
     scaleUp:
